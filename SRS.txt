@@ -1,0 +1,2258 @@
+# SOFTWARE REQUIREMENTS SPECIFICATION
+
+---
+
+# ColorZen: Block Puzzle
+
+**Version:** 1.0.0  
+**Date:** July 23, 2026  
+**Package ID:** com.appwaretech.colorzen.puzzle  
+**Platform:** Flutter (Android + iOS)  
+**Prepared by:** AppWareTech  
+**Status:** Draft — Ready for Development
+
+---
+
+## TABLE OF CONTENTS
+
+1. [Introduction](#1-introduction)
+   - 1.1 Purpose
+   - 1.2 Scope
+   - 1.3 Definitions, Acronyms, Abbreviations
+   - 1.4 References
+   - 1.5 Overview
+2. [Overall Description](#2-overall-description)
+   - 2.1 Product Perspective
+   - 2.2 Product Features Summary
+   - 2.3 User Classes and Characteristics
+   - 2.4 Operating Environment
+   - 2.5 Design and Implementation Constraints
+   - 2.6 Assumptions and Dependencies
+3. [System Features (Functional Requirements)](#3-system-features-functional-requirements)
+   - 3.1 Core Game Engine
+   - 3.2 Piece Generation System
+   - 3.3 Line Clear Detection
+   - 3.4 Scoring System
+   - 3.5 Game Mode Management
+   - 3.6 Daily Challenge System
+   - 3.7 Progress Save/Load (Hive)
+   - 3.8 Theme System
+   - 3.9 AdMob Integration
+   - 3.10 IAP (Remove Ads)
+   - 3.11 Share System
+   - 3.12 Settings Management
+4. [External Interface Requirements](#4-external-interface-requirements)
+   - 4.1 User Interfaces
+   - 4.2 Hardware Interfaces
+   - 4.3 Software Interfaces
+   - 4.4 Communication Interfaces
+5. [Non-Functional Requirements](#5-non-functional-requirements)
+   - 5.1 Performance
+   - 5.2 Safety
+   - 5.3 Security
+   - 5.4 Software Quality Attributes
+   - 5.5 Accessibility
+6. [UI/UX Specification (Complete)](#6-uiux-specification-complete)
+   - 6.1 Design Philosophy
+   - 6.2 Color System (All Themes)
+   - 6.3 Typography
+   - 6.4 Screen-by-Screen Specifications
+   - 6.5 Animation & Micro-Interaction Catalog
+   - 6.6 Component Library
+   - 6.7 Responsive Considerations
+7. [Game Design Document (GDD) Summary](#7-game-design-document-gdd-summary)
+   - 7.1 Core Loop Diagram
+   - 7.2 Difficulty Progression
+   - 7.3 Retention Mechanics
+   - 7.4 Monetization Strategy
+8. [Data Models & Architecture](#8-data-models--architecture)
+   - 8.1 Entity Relationship
+   - 8.2 BLoC Architecture
+   - 8.3 Hive Schema
+   - 8.4 API/Service Layer
+9. [Testing Requirements](#9-testing-requirements)
+   - 9.1 Unit Tests
+   - 9.2 Widget Tests
+   - 9.3 Integration Tests
+   - 9.4 Performance Tests
+10. [Appendices](#10-appendices)
+    - A: Complete Piece Shape Library
+    - B: Color Palette Reference
+    - C: AdMob Unit ID Placeholders
+    - D: Hive Box Schema Reference
+    - E: Animation Duration Reference Table
+
+---
+
+## 1. Introduction
+
+### 1.1 Purpose
+
+This Software Requirements Specification (SRS) document defines the complete functional, non-functional, UI/UX, and architectural requirements for **ColorZen: Block Puzzle** — a mobile casual puzzle game for Android and iOS built with Flutter. This document serves as the single source of truth for all development, design, testing, and release decisions. A developer reading this document must be able to build the entire application with zero ambiguity.
+
+### 1.2 Scope
+
+**ColorZen: Block Puzzle** is a casual hyper-casual mobile game in which players drag and drop colored block pieces onto a 9×9 grid. Completed horizontal or vertical lines are cleared, scoring points. The game features:
+
+- Three game modes: Classic (endless), Daily Challenge (seeded global puzzle), Zen (score-free relaxation)
+- Procedural piece generation with provable fairness
+- Three unlockable visual themes
+- Local progress persistence via Hive
+- Monetization through AdMob (interstitial + rewarded) and a Remove Ads IAP
+- Shareable Daily Challenge result cards
+
+**Out of Scope:**
+- Multiplayer or real-time online features
+- Server-side leaderboards (v1.0; local only)
+- User accounts or cloud sync
+- Piece rotation
+- Undo functionality
+- Timer-based game modes
+
+### 1.3 Definitions, Acronyms, Abbreviations
+
+| Term | Definition |
+|------|-----------|
+| SRS | Software Requirements Specification |
+| GDD | Game Design Document |
+| BLoC | Business Logic Component (Flutter state management pattern) |
+| Hive | Flutter local key-value NoSQL database |
+| IAP | In-App Purchase |
+| AdMob | Google's mobile advertising SDK |
+| SFX | Sound effects |
+| FR | Functional Requirement |
+| NFR | Non-Functional Requirement |
+| Piece | A shaped grouping of colored blocks the player places on the grid |
+| Tray | The UI area holding the 3 current draggable pieces |
+| Line Clear | The event when an entire row or column is filled, causing it to disappear |
+| Combo | Consecutive (≥3) moves each resulting in at least one line clear |
+| Color Bonus | Score multiplier awarded when a cleared line contains only one block color |
+| Seed | A deterministic random number generator starting value |
+| sp | Scaled pixels (Flutter font size unit) |
+| px | Logical pixels |
+| ms | Milliseconds |
+
+### 1.4 References
+
+| Reference | Description |
+|-----------|-----------|
+| Flutter 3.x Documentation | https://docs.flutter.dev |
+| Dart Language Specification | https://dart.dev/guides |
+| Hive Documentation | https://docs.hivedb.dev |
+| google_mobile_ads SDK | https://developers.google.com/admob/flutter/quick-start |
+| flutter_animate Package | https://pub.dev/packages/flutter_animate |
+| audioplayers Package | https://pub.dev/packages/audioplayers |
+| share_plus Package | https://pub.dev/packages/share_plus |
+| in_app_purchase Package | https://pub.dev/packages/in_app_purchase |
+| Google Fonts — Nunito | https://fonts.google.com/specimen/Nunito |
+| AdMob Policy (Casual Games) | https://support.google.com/admob/answer/6128543 |
+
+### 1.5 Overview
+
+This document is organized as follows:
+
+- **Section 2** provides a high-level product description, user classes, and constraints.
+- **Section 3** specifies all functional requirements organized by system feature.
+- **Section 4** specifies all external interface requirements.
+- **Section 5** specifies non-functional requirements including performance targets.
+- **Section 6** provides the complete UI/UX specification with layouts, animations, and component definitions.
+- **Section 7** provides the Game Design Document summary covering core loop, progression, and monetization.
+- **Section 8** defines data models, architecture patterns, and persistence schema.
+- **Section 9** defines testing strategy and test cases.
+- **Section 10** contains appendices with complete reference data.
+
+---
+
+## 2. Overall Description
+
+### 2.1 Product Perspective
+
+ColorZen: Block Puzzle is a standalone mobile application. It is a greenfield product developed by AppWareTech, designed specifically to capture market share from existing block puzzle games (e.g., Block Puzzle Jewel, Wood Block Puzzle, 1010!) by solving the top player pain points identified in competitor reviews:
+
+| Competitor Pain Point | ColorZen Solution |
+|----------------------|-------------------|
+| Mid-game ads | Ads shown ONLY on game over screen, never during gameplay |
+| Rigged piece feeling | Always visible "next 3 pieces" preview tray for planning |
+| No undo (frustration) | No undo — intentional, preserves skill feel and tension |
+| No progress save | Hive persistence saves on every piece placement |
+| Timer pressure | Zero timers — pure zen, relaxed gameplay |
+| No theme choice | Three unlockable visual themes |
+| Repetitive levels | Procedural generation — 1000+ unique configurations |
+| No daily habit loop | Daily Challenge mode with sharable result card |
+
+The application runs entirely offline (except for ad serving). No backend server is required for v1.0.
+
+### 2.2 Product Features Summary
+
+| Feature | Priority | Mode |
+|---------|---------|------|
+| 9×9 drag-and-drop block puzzle grid | P0 | All |
+| 3-piece tray with next-3-pieces preview | P0 | All |
+| Line clear detection (rows + columns) | P0 | All |
+| Scoring with combo and color bonus | P0 | Classic, Daily |
+| Classic Mode (endless) | P0 | — |
+| Daily Challenge Mode (seeded) | P0 | — |
+| Zen Mode (no score, ambient) | P1 | — |
+| Progress save/load on every move | P0 | All |
+| Game over detection and screen | P0 | All |
+| Midnight Zen theme (default) | P0 | All |
+| Desi Rangoli theme (unlockable) | P1 | All |
+| Arctic Ice theme (unlockable) | P1 | All |
+| AdMob interstitial (game over only) | P0 | Classic, Daily |
+| AdMob rewarded ad (hint) | P1 | Classic, Daily |
+| Remove Ads IAP | P1 | All |
+| Share Daily Challenge card | P1 | Daily |
+| Sound effects | P1 | All |
+| Ambient music | P1 | Zen |
+| Haptic feedback | P1 | All |
+| Colorblind accessibility mode | P2 | All |
+
+### 2.3 User Classes and Characteristics
+
+**Primary User: Casual Mobile Gamer (Ages 18–35)**
+- Plays in short sessions (5–15 minutes) during commutes, breaks, or before sleep
+- Expects intuitive controls — no tutorial needed
+- Values visual polish and satisfying feedback
+- Sensitive to disruptive ads
+- Global audience; South Asian market focus requires culturally resonant themes (Desi Rangoli)
+
+**Secondary User: Younger Player (Ages 8–17)**
+- Attracted by bright colors and simple rules
+- Shorter attention span — fast visual feedback is critical
+- Benefits from the "no timer" design
+
+**Tertiary User: Older Casual Player (Ages 36–45)**
+- Prefers relaxed gameplay without pressure
+- Zen Mode is the primary draw
+- Large tap targets and readable fonts are important
+
+**All users share:**
+- Touchscreen-only interaction model
+- Portrait orientation preference
+- Expectation of offline-first experience
+
+### 2.4 Operating Environment
+
+| Attribute | Specification |
+|-----------|--------------|
+| Android minimum version | Android 6.0 (API 23) |
+| iOS minimum version | iOS 13.0 |
+| Flutter SDK version | 3.x (stable channel) |
+| Dart SDK version | 3.x |
+| Screen orientation | Portrait only (locked) |
+| Minimum screen width | 360px (logical) |
+| Maximum screen width | 430px (logical) |
+| Minimum RAM | 2 GB |
+| Network requirement | Not required (offline-first); ads require network |
+| Storage requirement | < 50 MB installed |
+
+### 2.5 Design and Implementation Constraints
+
+- **C-01:** The application MUST be built exclusively with Flutter 3.x (Dart). No React Native, Unity, or other frameworks.
+- **C-02:** State management MUST use BLoC + Cubit pattern exclusively.
+- **C-03:** Local persistence MUST use Hive. No SQLite, SharedPreferences (for game state), or cloud databases in v1.0.
+- **C-04:** Ads MUST comply with AdMob policies. Interstitials may only appear on the game over screen.
+- **C-05:** No undo functionality. This is an intentional game design decision, not a missing feature.
+- **C-06:** No timer in any game mode. Timer-based gameplay is explicitly excluded.
+- **C-07:** No piece rotation. This is an intentional game design decision.
+- **C-08:** The game MUST target 60fps on all supported devices. Frame drops below 55fps are a P0 bug.
+- **C-09:** Cold start time MUST be under 2 seconds on mid-range devices (e.g., Samsung Galaxy A32).
+- **C-10:** The app MUST function fully offline, with graceful degradation when ads cannot be loaded.
+- **C-11:** All user-facing text must support localization (l10n) scaffolding, even if only English is shipped in v1.0.
+
+### 2.6 Assumptions and Dependencies
+
+- **A-01:** AdMob account and app registration will be completed before production build.
+- **A-02:** Apple App Store Connect and Google Play Console accounts are active.
+- **A-03:** The Nunito font is available via `google_fonts` package at build time.
+- **A-04:** Audio assets (SFX + ambient music) will be delivered as `.ogg` (Android) and `.m4a` (iOS) files in `assets/audio/`.
+- **A-05:** The development team has Flutter 3.x and Dart 3.x installed on development machines.
+- **A-06:** The IAP product IDs will be registered in both app stores before release build testing.
+- **A-07:** Daily Challenge seeding is date-based only. No server time sync is required; device local date is used.
+
+---
+
+## 3. System Features (Functional Requirements)
+
+> **Requirement notation:** Each requirement is assigned a unique ID: `FR-[AREA]-[NNN]`.
+
+---
+
+### 3.1 Core Game Engine
+
+**FR-ENG-001:** The game grid SHALL be a 9×9 matrix of cells. Each cell is either empty (`null`) or occupied by a `BlockColor` value.
+
+**FR-ENG-002:** The player SHALL interact with the game exclusively through drag-and-drop gestures. No keyboard, no button-based placement.
+
+**FR-ENG-003:** When a piece is dragged onto the grid, the system SHALL display a valid drop preview (ghost highlight) showing where the piece would land if released at the current finger position.
+
+**FR-ENG-004:** The ghost preview SHALL show in the piece's color at 40% opacity when the placement is valid.
+
+**FR-ENG-005:** The ghost preview SHALL show in red (`#FF4444`) at 30% opacity when the placement is invalid.
+
+**FR-ENG-006:** A piece placement is valid if and only if ALL cells the piece would occupy are currently empty.
+
+**FR-ENG-007:** On valid release, the piece SHALL be placed permanently on the grid. There is no undo.
+
+**FR-ENG-008:** On invalid release, the piece SHALL animate back to its original position in the tray with a horizontal shake animation (±8px × 3 oscillations, 200ms total).
+
+**FR-ENG-009:** When a player is holding a piece, the piece visual SHALL be offset 20px above the finger center so the piece is not hidden behind the user's finger.
+
+**FR-ENG-010:** The game ends when no piece in the current 3-piece tray can be placed anywhere on the grid. The system SHALL check this after every piece placement.
+
+**FR-ENG-011:** Game over detection SHALL check all three current pieces against all possible empty cell positions. If any piece has at least one valid placement, the game continues.
+
+**FR-ENG-012:** The game SHALL save state to Hive after every successful piece placement (not just on app close).
+
+**FR-ENG-013:** On app launch, the system SHALL restore the game to the exact saved state including grid, pieces, score, and mode.
+
+---
+
+### 3.2 Piece Generation System
+
+**FR-GEN-001:** The piece pool SHALL consist of exactly 20 predefined shapes (see Appendix A for complete shape library).
+
+**FR-GEN-002:** Each piece SHALL have a shape (2D boolean grid, max 4×4) and a single `BlockColor` assigned.
+
+**FR-GEN-003:** The player SHALL always have exactly 3 pieces in the current tray.
+
+**FR-GEN-004:** A "next pieces" preview tray SHALL display the next 3 pieces the player will receive after placing all 3 current pieces.
+
+**FR-GEN-005:** New pieces are generated in sets of 3. A new set is generated when the tray becomes empty (all 3 pieces placed).
+
+**FR-GEN-006:** Piece colors SHALL satisfy the fairness guarantee: within every batch of 9 consecutively generated pieces, all 6 `BlockColor` values appear at least once. This prevents any one color from being absent for too long.
+
+**FR-GEN-007:** Piece shapes SHALL be selected using a weighted random algorithm that prevents the same shape from appearing more than twice within a 9-piece window.
+
+**FR-GEN-008:** In **Classic Mode**, the piece PRNG seed SHALL be system random (unpredictable).
+
+**FR-GEN-009:** In **Daily Challenge Mode**, the piece PRNG seed SHALL be derived deterministically from the current date string formatted as `yyyy-MM-dd`. The same seed produces the same sequence globally for all players on the same date.
+
+**FR-GEN-010:** In **Zen Mode**, piece generation SHALL be identical to Classic Mode (system random).
+
+**FR-GEN-011:** The system SHALL pre-generate all 6 pieces (3 current + 3 next) at game start and maintain this buffer at all times.
+
+---
+
+### 3.3 Line Clear Detection
+
+**FR-CLR-001:** After every piece placement, the system SHALL scan all 9 rows and all 9 columns for complete fill (no empty cells).
+
+**FR-CLR-002:** A row or column is "complete" when all 9 cells in it are occupied by any `BlockColor` value.
+
+**FR-CLR-003:** All complete rows and columns SHALL be cleared simultaneously in a single clearing event.
+
+**FR-CLR-004:** The system SHALL calculate the score multiplier based on how many lines are cleared in the single event (see Section 3.4).
+
+**FR-CLR-005:** After clearing, the grid state SHALL be updated immediately. Cleared cells return to `null`.
+
+**FR-CLR-006:** The line clear animation SHALL play concurrently with the score update, not sequentially.
+
+**FR-CLR-007:** The system SHALL detect if a cleared line qualifies for the Color Bonus: if ALL cells in a cleared line are of the same `BlockColor`, that line's score is multiplied by 2.
+
+**FR-CLR-008:** Multiple lines cleared simultaneously each independently qualify (or not) for the Color Bonus. Bonuses stack multiplicatively.
+
+---
+
+### 3.4 Scoring System
+
+**FR-SCR-001:** Base score values per clearing event:
+
+| Lines Cleared | Base Points |
+|--------------|------------|
+| 1 line | 100 |
+| 2 lines | 250 |
+| 3 lines | 450 |
+| 4 lines | 700 |
+| 5+ lines | 700 + (lines - 4) × 200 |
+
+**FR-SCR-002:** Color Bonus multiplier: if a cleared line contains only one color, multiply that line's base contribution by 2.0×.
+
+**FR-SCR-003:** Combo Multiplier: if the player clears at least one line in 3 or more consecutive moves, a combo is active. The combo multiplier is 1.5× and applies to ALL lines cleared while the combo is active.
+
+**FR-SCR-004:** The combo counter resets on any move that does NOT result in a line clear.
+
+**FR-SCR-005:** Score formula per clearing event:
+```
+event_score = (sum of per-line scores with color bonuses) × combo_multiplier
+```
+
+**FR-SCR-006:** The current score SHALL be displayed in real-time and updated immediately after each clearing event.
+
+**FR-SCR-007:** Personal best score SHALL be stored per game mode (Classic, Daily) independently.
+
+**FR-SCR-008:** In Zen Mode, no score is calculated or displayed. The scoring engine is disabled.
+
+**FR-SCR-009:** When a new high score is achieved, the "BEST" label SHALL display a gold shimmer animation (1200ms sweep, repeated 3 times).
+
+**FR-SCR-010:** A floating score animation SHALL appear: "+[points]" text rises 40px and fades out over 600ms in the same color as the piece placed.
+
+---
+
+### 3.5 Game Mode Management
+
+**FR-MOD-001:** The game SHALL support exactly three modes: `classic`, `daily`, `zen`.
+
+**FR-MOD-002:** Switching game modes from an active game SHALL prompt the user with a confirmation dialog ("Start new game? Current progress will be saved."). The active game state is preserved; a new game in the selected mode starts fresh.
+
+**FR-MOD-003:** Each game mode SHALL maintain its own independent saved state in Hive, so the player can switch between Classic and Zen without losing progress in either.
+
+**FR-MOD-004:** Classic Mode — endless, random pieces, score tracked, personal best tracked.
+
+**FR-MOD-005:** Daily Challenge Mode — seeded by date, score tracked, sharable result, limited to one completion attempt per day per device.
+
+**FR-MOD-006:** Zen Mode — random pieces, no score displayed, ambient music auto-plays (if music is enabled), no game over screen (game simply resets silently when no moves remain, maintaining the zen experience).
+
+**FR-MOD-007:** The current active mode SHALL be indicated in the game screen's top bar.
+
+---
+
+### 3.6 Daily Challenge System
+
+**FR-DAI-001:** The Daily Challenge SHALL use a fixed seed derived from the current device date (`yyyy-MM-dd`) to initialize the PRNG, guaranteeing the same piece sequence worldwide.
+
+**FR-DAI-002:** The Daily Challenge SHALL reset every day at midnight local device time.
+
+**FR-DAI-003:** A player may only complete the Daily Challenge once per calendar day. After completion, the Play button for Daily Challenge shall be replaced with "See Result" until the next day.
+
+**FR-DAI-004:** The system SHALL display a countdown timer on the Home Screen showing time remaining until the next Daily Challenge (format: `HH:MM:SS`). The timer SHALL pulse subtly every second.
+
+**FR-DAI-005:** Upon Daily Challenge completion, the system SHALL generate a shareable result card (see Section 3.11).
+
+**FR-DAI-006:** The Daily Challenge completion status and score SHALL be saved to Hive keyed by date string.
+
+**FR-DAI-007:** If the player quits mid-challenge, the state SHALL be saved and they may resume the same seed on the same day.
+
+---
+
+### 3.7 Progress Save/Load (Hive)
+
+**FR-SAV-001:** All game state SHALL be serialized and saved to Hive after each successful piece placement. The system SHALL never wait for app close to save.
+
+**FR-SAV-002:** The following data SHALL be persisted per game mode:
+- Grid state (9×9 matrix of `BlockColor?`)
+- Current 3 pieces in tray
+- Next 3 pieces (preview)
+- Current score
+- Combo count
+- Lines cleared count
+- Blocks placed count
+
+**FR-SAV-003:** The following global data SHALL be persisted independently of game mode:
+- Best score per mode
+- Lifetime stats (total lines cleared, total blocks placed, total games played)
+- Current theme selection
+- Daily Challenge completion log (date → score map)
+- Settings (sound enabled, haptic enabled, music enabled, music volume, notifications enabled)
+- Ads removed flag
+
+**FR-SAV-004:** On app launch, the game SHALL load saved state within 200ms.
+
+**FR-SAV-005:** If no saved state exists for a mode, the game SHALL start fresh with an empty grid and a newly generated piece set.
+
+**FR-SAV-006:** All Hive TypeAdapters SHALL be generated via `hive_generator` and registered in `main()` before `runApp()`.
+
+**FR-SAV-007:** Hive box names SHALL follow the schema defined in Appendix D.
+
+---
+
+### 3.8 Theme System
+
+**FR-THM-001:** Three themes SHALL be available: `midnightZen` (default, unlocked), `desiRangoli` (locked), `arcticIce` (locked).
+
+**FR-THM-002:** Theme selection SHALL persist across sessions via Hive.
+
+**FR-THM-003:** Locked themes are unlocked by one of two methods:
+- Reaching a score milestone (see table below)
+- Watching a rewarded ad (single watch unlocks permanently)
+
+| Theme | Score Milestone to Unlock |
+|-------|--------------------------|
+| Desi Rangoli | 5,000 points in Classic Mode |
+| Arctic Ice | 10,000 points in Classic Mode |
+
+**FR-THM-004:** The Themes Screen SHALL display all themes in a 2-column grid. Each card shows: theme name, 5 color swatches, and a lock icon if locked.
+
+**FR-THM-005:** The currently selected theme SHALL have an accent-colored border glow effect on its card.
+
+**FR-THM-006:** When a theme is unlocked, a confetti burst animation (30 colored particles, 1000ms) plays fullscreen.
+
+**FR-THM-007:** The Home Screen background SHALL subtly reflect the currently selected theme's color palette.
+
+**FR-THM-008:** The `ThemeCubit` SHALL expose the current `AppTheme` to the entire widget tree via `BlocProvider`.
+
+---
+
+### 3.9 AdMob Integration
+
+**FR-ADS-001:** AdMob interstitial ads SHALL only appear on the Game Over screen, after the game over event is detected, before the game over results are shown.
+
+**FR-ADS-002:** Interstitial ads SHALL NOT appear during gameplay under any circumstance.
+
+**FR-ADS-003:** Banner ads SHALL NOT be used in any screen.
+
+**FR-ADS-004:** Client-side frequency cap: no more than 1 interstitial ad per 3-minute window (180,000ms). The timestamp of the last interstitial shown SHALL be saved in memory (not Hive).
+
+**FR-ADS-005:** If an interstitial fails to load, the game over screen SHALL show immediately without delay.
+
+**FR-ADS-006:** The next interstitial ad SHALL begin pre-loading immediately after the previous one is shown (not after it closes).
+
+**FR-ADS-007:** Rewarded ads SHALL be player-triggered only. The trigger is a "Hint" button on the game screen (P1 feature). The reward is revealing the optimal placement for the current highlighted piece.
+
+**FR-ADS-008:** If the player has purchased "Remove Ads" IAP, no interstitial ads are shown. Rewarded ads remain available (player choice).
+
+**FR-ADS-009:** AdMob unit IDs SHALL be managed via a configuration file (see Appendix C). Test IDs are used during development; production IDs are injected at release build.
+
+**FR-ADS-010:** The `AdService` class SHALL implement `AdMobInterstitialService` and `AdMobRewardedService` interfaces and be injected via the service locator pattern.
+
+---
+
+### 3.10 IAP (Remove Ads)
+
+**FR-IAP-001:** A single IAP product SHALL exist: "Remove Ads" (non-consumable).
+
+**FR-IAP-002:** Product ID: `com.appwaretech.colorzen.puzzle.remove_ads`
+
+**FR-IAP-003:** Purchase restores SHALL be supported. A "Restore Purchases" button SHALL be available in the Settings screen.
+
+**FR-IAP-004:** The "Remove Ads" flag SHALL be stored in Hive after successful purchase verification.
+
+**FR-IAP-005:** The `in_app_purchase` plugin SHALL handle payment and receipt validation. No custom server-side receipt validation is required for v1.0.
+
+**FR-IAP-006:** If purchase fails, the system SHALL show a user-friendly error snackbar and make no changes to game state.
+
+---
+
+### 3.11 Share System
+
+**FR-SHR-001:** The Daily Challenge result card SHALL be a generated image containing:
+- Game logo (`ColorZen` text in themed color)
+- Date of challenge (e.g., "Daily Challenge — July 23, 2026")
+- Final score
+- A 5×5 pixel-art grid representation using colored emoji squares (🟥🟨🟩🟦🟪🟧⬛) representing the player's final board state
+- Tagline: "Place. Clear. Zen."
+- App store URL placeholder
+
+**FR-SHR-002:** The share card SHALL be generated as a PNG image using Flutter's `RenderRepaintBoundary` → `toImage()` pipeline.
+
+**FR-SHR-003:** The share action SHALL be triggered by the "Share Score" button on the Game Over screen (Daily Challenge mode only).
+
+**FR-SHR-004:** `share_plus` SHALL be used to invoke the native share sheet.
+
+**FR-SHR-005:** The generated image SHALL be saved temporarily to the app's cache directory before sharing.
+
+---
+
+### 3.12 Settings Management
+
+**FR-SET-001:** Settings SHALL include: Sound Effects (toggle), Haptic Feedback (toggle), Music (toggle), Music Volume (slider, 0–100%), Daily Challenge Notification (toggle), Rate the App (external link), Remove Ads (IAP trigger), Restore Purchases, Privacy Policy (external link), Terms of Service (external link).
+
+**FR-SET-002:** All settings changes SHALL take effect immediately without requiring a restart.
+
+**FR-SET-003:** All settings SHALL be persisted to Hive immediately on change.
+
+**FR-SET-004:** "Rate the App" SHALL open the appropriate store listing (Google Play / App Store) using `in_app_review` or `url_launcher`.
+
+**FR-SET-005:** Daily Challenge Notification permission SHALL be requested only when the user enables the toggle; not on app first launch.
+
+---
+
+## 4. External Interface Requirements
+
+### 4.1 User Interfaces
+
+The application has 7 primary screens. Full screen-by-screen widget tree specifications are provided in Section 6.4. Summary:
+
+| Screen ID | Screen Name | Entry Point |
+|----------|------------|-------------|
+| SCR-01 | Splash Screen | App launch |
+| SCR-02 | Home Screen | After splash |
+| SCR-03 | Game Screen | From home, mode selected |
+| SCR-04 | Game Over Screen | When game ends |
+| SCR-05 | Daily Challenge Result Card | After daily completion |
+| SCR-06 | Themes Screen | From home via icon |
+| SCR-07 | Settings Screen | From home via icon |
+
+All screens use portrait-only orientation lock. Safe area insets must be respected for notches and home bars.
+
+### 4.2 Hardware Interfaces
+
+**Haptic Feedback:**
+- Piece placement (valid): `HapticFeedback.lightImpact()` (50ms)
+- Line clear: `HapticFeedback.mediumImpact()` (100ms)
+- Game over: `HapticFeedback.heavyImpact()` (200ms)
+- Invalid placement: `HapticFeedback.selectionClick()` repeated 3 times (shaker pattern)
+- Button press: `HapticFeedback.selectionClick()` (30ms)
+
+All haptic feedback must check the haptic enabled setting before triggering.
+
+**Audio Output:**
+- Standard device speakers and headphones
+- Audio must duck when a phone call is received
+- Audio must respect device silent mode on iOS
+
+### 4.3 Software Interfaces
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `flutter_bloc` | ^8.x | BLoC + Cubit state management |
+| `hive` | ^2.x | Local persistence |
+| `hive_flutter` | ^1.x | Hive Flutter integration |
+| `hive_generator` | ^2.x | Code generation for TypeAdapters |
+| `build_runner` | ^2.x | Code generation runner |
+| `google_mobile_ads` | ^5.x | AdMob SDK |
+| `in_app_purchase` | ^3.x | IAP handling |
+| `flutter_animate` | ^4.x | Animation helpers |
+| `audioplayers` | ^6.x | SFX and music playback |
+| `share_plus` | ^10.x | Native share sheet |
+| `google_fonts` | ^6.x | Nunito font |
+| `equatable` | ^2.x | Value equality for BLoC states |
+| `get_it` | ^8.x | Service locator / DI |
+| `flutter_haptic_feedback` | ^0.x | Haptic abstraction |
+| `path_provider` | ^2.x | Cache directory access for share card |
+
+### 4.4 Communication Interfaces
+
+**FR-COM-001:** The application is fully offline-first. No network requests are made for core gameplay.
+
+**FR-COM-002:** Network access is required ONLY for:
+1. Loading and serving AdMob ads
+2. IAP transaction processing (handled by platform SDK)
+3. App store rating intent
+
+**FR-COM-003:** The AdMob SDK handles all ad network communication internally.
+
+**FR-COM-004:** No user data is transmitted to any AppWareTech server in v1.0.
+
+---
+
+## 5. Non-Functional Requirements
+
+### 5.1 Performance
+
+**NFR-PER-001:** The game SHALL maintain 60fps during all animations. Measured on a Samsung Galaxy A32 (mid-range Android, 2021) as the baseline device.
+
+**NFR-PER-002:** Cold start time (app launch → interactive Home Screen) SHALL be under 2,000ms on the baseline device.
+
+**NFR-PER-003:** Piece placement and line clear logic (including animation trigger) SHALL complete within 16ms (one frame budget).
+
+**NFR-PER-004:** Hive read on app launch SHALL complete within 200ms.
+
+**NFR-PER-005:** All animations SHALL use the Flutter animation system with proper use of `AnimationController` disposal to prevent memory leaks.
+
+**NFR-PER-006:** Widget rebuilds SHALL be minimized. Game grid cells SHALL use `RepaintBoundary` to isolate individual cell repaints.
+
+**NFR-PER-007:** The game canvas (grid + piece tray) SHALL not trigger unnecessary full-tree rebuilds. BLoC state emission SHALL be granular.
+
+**NFR-PER-008:** Memory usage SHALL not exceed 150 MB during active gameplay.
+
+**NFR-PER-009:** Installed APK size SHALL not exceed 30 MB (before Play Store compression).
+
+### 5.2 Safety
+
+**NFR-SAF-001:** The game SHALL contain no dark patterns: no artificial urgency, no manipulative IAP prompts, no loot boxes, and no countdown timers that pressure purchases.
+
+**NFR-SAF-002:** Interstitial ads are shown at most once every 3 minutes and only at natural session breakpoints (game over).
+
+**NFR-SAF-003:** The game has no social features in v1.0; no risk of online harassment.
+
+**NFR-SAF-004:** All content is suitable for ages 8 and above. No violence, sexual content, or disturbing imagery.
+
+**NFR-SAF-005:** Zen Mode is specifically designed to provide a calming, non-stressful experience. No negative reinforcement.
+
+### 5.3 Security
+
+**NFR-SEC-001:** No personally identifiable information (PII) is collected or stored.
+
+**NFR-SEC-002:** Local Hive data is not encrypted in v1.0 (game state data poses no privacy risk).
+
+**NFR-SEC-003:** IAP receipt validation relies on the platform SDK (Google/Apple). No custom server-side validation in v1.0.
+
+**NFR-SEC-004:** Analytics events (if added) SHALL NOT include device IDs, IP addresses, or any identifying information beyond anonymous event counts.
+
+**NFR-SEC-005:** The AdMob SDK is responsible for its own data handling. A privacy policy link must be present in Settings.
+
+### 5.4 Software Quality Attributes
+
+**Reliability:**
+- The game SHALL not crash during normal gameplay under any circumstance.
+- The save system SHALL be atomic: a power-off mid-save SHALL not corrupt the saved state (use Hive's built-in transactional write).
+- Crash rate target: < 0.1% of sessions (measured via Firebase Crashlytics, to be added in v1.1).
+
+**Maintainability:**
+- All business logic SHALL be in domain/use case layer, isolated from UI.
+- BLoC classes SHALL not contain UI-specific code.
+- The `GameRepository` abstract interface allows swapping storage implementations without touching presentation code.
+- Code SHALL follow Flutter/Dart style guide. `dart analyze` must pass with zero errors.
+
+**Portability:**
+- The application SHALL compile and run identically on Android 6+ and iOS 13+.
+- Platform-specific code (haptics, IAP, notifications) SHALL be abstracted behind interfaces.
+- No platform channels beyond those provided by listed packages.
+
+**Testability:**
+- All use cases SHALL be pure functions or classes with injectable dependencies.
+- BLoC classes SHALL be unit-testable without Flutter widget infrastructure.
+- The `GameEngine` (line clear, scoring) SHALL be testable as a pure Dart library.
+
+### 5.5 Accessibility
+
+**NFR-ACC-001 (P2 — Stretch Goal):** A colorblind mode SHALL provide pattern overlays or shape indicators on block colors in addition to the color fill, ensuring blocks are distinguishable without relying on color alone.
+
+**NFR-ACC-002:** All interactive targets (buttons, piece tray items) SHALL have a minimum tap target size of 44×44 logical pixels per Apple HIG / Material guidelines.
+
+**NFR-ACC-003:** Text contrast ratios SHALL meet WCAG AA (4.5:1 for normal text, 3:1 for large text) against their respective backgrounds.
+
+**NFR-ACC-004:** Semantic labels SHALL be provided for all interactive elements for screen reader support (VoiceOver / TalkBack).
+
+---
+
+## 6. UI/UX Specification (Complete)
+
+### 6.1 Design Philosophy
+
+The UI must achieve THREE psychological goals simultaneously:
+
+1. **Instant Comprehension** — A new player must understand the core mechanic within 10 seconds with zero tutorial. The layout must communicate "drag from tray → place on grid → fill lines" through visual affordance alone.
+
+2. **Visual Delight** — Every animation, color choice, and spacing decision must feel premium and rewarding. The game must feel more expensive than it is.
+
+3. **Calm Focus** — The layout reduces cognitive load. The dark background recedes; the colored blocks are the star. There is breathing room around every element. Every pixel must earn its place.
+
+**Design Principles:**
+- Dark first: dark backgrounds make colored blocks pop vividly
+- Generous padding: minimum 16px gutters, 24px preferred
+- Rounded everything: no sharp corners; radius = 12–24px throughout
+- Motion is meaning: every animation communicates game state, not just decoration
+- Hierarchy through weight: scores are large and bold; labels are small and subdued
+
+### 6.2 Color System (All Themes)
+
+#### Theme 1: Midnight Zen (Default — Always Unlocked)
+
+| Role | Color Name | Hex |
+|------|-----------|-----|
+| Background | Deep Navy | `#0D0D1A` |
+| Grid Background | Navy 2 | `#12122A` |
+| Grid Lines | Subtle Navy | `#1E1E3F` |
+| Grid Cell Empty | Recessed Navy | `#161630` |
+| UI Surface (cards, trays) | Surface Navy | `#1A1A35` |
+| Primary Accent | Electric Violet | `#7C5CFC` |
+| Secondary Accent | Teal Mint | `#00D4AA` |
+| Text Primary | Cool White | `#F0F0FF` |
+| Text Secondary | Muted Lavender | `#8888AA` |
+| Error / Invalid | Alert Red | `#FF4444` |
+
+#### Theme 2: Desi Rangoli (Unlocked at 5,000 pts)
+
+| Role | Color Name | Hex |
+|------|-----------|-----|
+| Background | Deep Warm Dark | `#1A0A0A` |
+| Grid Background | Warm Dark 2 | `#200F0F` |
+| Grid Lines | Warm Grid | `#3A1818` |
+| Grid Cell Empty | Recessed Warm | `#1E0E0E` |
+| UI Surface | Warm Surface | `#241212` |
+| Primary Accent | Saffron Orange | `#FF6B35` |
+| Secondary Accent | Rangoli Gold | `#FFD700` |
+| Text Primary | Warm White | `#FFF8F0` |
+| Text Secondary | Muted Terracotta | `#AA8877` |
+| Grid Overlay | Mandala Pattern | 5% opacity geometric SVG |
+
+#### Theme 3: Arctic Ice (Unlocked at 10,000 pts)
+
+| Role | Color Name | Hex |
+|------|-----------|-----|
+| Background | Arctic Dark | `#0A1628` |
+| Grid Background | Arctic Dark 2 | `#0D1E35` |
+| Grid Lines | Ice Grid | `#1A3050` |
+| Grid Cell Empty | Recessed Arctic | `#0C1A2E` |
+| UI Surface | Arctic Surface | `#102040` |
+| Primary Accent | Arctic Cyan | `#64D2FF` |
+| Secondary Accent | Frost White | `#E8F8FF` |
+| Text Primary | Ice White | `#EEF8FF` |
+| Text Secondary | Muted Ice | `#6688AA` |
+
+#### Block Color Palettes
+
+##### Midnight Zen Block Colors
+
+| Name | Hex | Psychological Role |
+|------|-----|-------------------|
+| Coral Red | `#FF6B6B` | Energy, urgency |
+| Mint Green | `#4ECDC4` | Calm, freshness |
+| Electric Yellow | `#FFE66D` | Joy, attention |
+| Royal Purple | `#A55EEA` | Mystery, premium |
+| Sky Blue | `#45B7D1` | Trust, clarity |
+| Warm Orange | `#FF9F43` | Warmth, enthusiasm |
+
+##### Desi Rangoli Block Colors
+
+| Name | Hex |
+|------|-----|
+| Magenta | `#E91E8C` |
+| Rangoli Gold | `#FFD700` |
+| Peacock Green | `#00897B` |
+| Rose | `#FF6090` |
+| Ivory | `#FFFFF0` |
+| Crimson | `#DC143C` |
+
+##### Arctic Ice Block Colors
+
+| Name | Hex |
+|------|-----|
+| Ice Blue | `#7EC8E3` |
+| Frost White | `#E8F4F8` |
+| Glacier Teal | `#52B3D9` |
+| Snow Lavender | `#C5CAE9` |
+| Arctic Cyan | `#00BCD4` |
+| Deep Ocean | `#1A237E` |
+
+### 6.3 Typography
+
+**Font Family:** Nunito (Google Fonts)
+- Rationale: Round letterforms are approachable and highly legible on dark backgrounds at small sizes. Used globally across all text in the app.
+
+| Usage | Weight | Size | Letter Spacing |
+|-------|--------|------|---------------|
+| Game Title / Logo | ExtraBold (800) | 32sp | 0.5sp |
+| Score Number | Bold (700) | 28sp | 0.3sp |
+| Game Over Heading | ExtraBold (800) | 26sp | 0.3sp |
+| Button Label | Bold (700) | 16sp | 0.5sp |
+| Section Labels | SemiBold (600) | 14sp | 0.3sp |
+| Body / Description | Regular (400) | 14sp | 0.3sp |
+| Countdown Timer | Bold (700) | 18sp | 0.0sp |
+| Mini Labels (stats) | SemiBold (600) | 12sp | 0.2sp |
+
+### 6.4 Screen-by-Screen Specifications
+
+---
+
+#### SCR-01: Splash Screen
+
+**Duration:** 1,500ms (no skip)  
+**Purpose:** Brand establishment, Hive initialization
+
+**Layout:**
+```
+┌─────────────────────────────────┐
+│                                 │
+│                                 │
+│         [ColorZen Logo]         │  ← Scale + fade in (0 → 1.0, 600ms)
+│                                 │
+│       "Place. Clear. Zen."      │  ← Fade in at 800ms, 400ms duration
+│                                 │
+└─────────────────────────────────┘
+```
+Background: solid theme background color (`#0D0D1A`)
+
+**Flutter Widget Tree:**
+```dart
+Scaffold(
+  backgroundColor: AppColors.background,
+  body: Center(
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        // Logo
+        Text('ColorZen', style: AppTextStyles.logo)
+          .animate()
+          .scale(begin: Offset(0.6, 0.6), end: Offset(1.0, 1.0), duration: 600.ms, curve: Curves.easeOut)
+          .fadeIn(duration: 600.ms),
+        const SizedBox(height: 12),
+        // Tagline
+        Text('Place. Clear. Zen.', style: AppTextStyles.tagline)
+          .animate(delay: 800.ms)
+          .fadeIn(duration: 400.ms),
+      ],
+    ),
+  ),
+)
+```
+
+**Transition:** Navigate to Home Screen after 1,500ms using a fade transition (400ms).
+
+---
+
+#### SCR-02: Home Screen
+
+**Layout:**
+```
+┌─────────────────────────────────────┐
+│                                     │
+│        [Animated Particles BG]      │  ← 5% opacity, slow drift
+│                                     │
+│           ColorZen                  │  ← Logo, 32sp ExtraBold
+│        Block Puzzle                 │  ← Subtitle, 14sp
+│                                     │
+│  ┌─────────────────────────────┐   │
+│  │     🎮  PLAY                │   │  ← Primary button, violet fill
+│  └─────────────────────────────┘   │
+│                                     │
+│  ┌─────────────────────────────┐   │
+│  │  📅  DAILY CHALLENGE        │   │  ← Outlined button
+│  │         HH:MM:SS remaining  │   │
+│  └─────────────────────────────┘   │
+│                                     │
+│  ┌─────────────────────────────┐   │
+│  │  🧘  ZEN MODE               │   │  ← Outlined button
+│  └─────────────────────────────┘   │
+│                                     │
+│                                     │
+│  [🏆 Leaderboard] [🎨 Themes] [⚙️]  │  ← Bottom icon row, 44px
+└─────────────────────────────────────┘
+```
+
+**Button specifications:**
+- All buttons: pill shape, border radius 28px, height 56px, full width minus 32px horizontal padding
+- Primary (PLAY): background `#7C5CFC`, text `#FFFFFF`
+- Outlined (DAILY, ZEN): border 1.5px `#7C5CFC`, background transparent, text `#7C5CFC`
+- Scale 0.96 on press, 80ms, return 80ms
+
+**Animated Background:**
+- 15 floating particles, each a soft circle, 6–14px diameter
+- Random block colors at 5% opacity
+- Velocity: 8–20px per second, random direction
+- Each particle wraps around screen edges
+- Implemented as a `CustomPainter` with `TickerProvider`
+
+**Flutter Widget Tree:**
+```dart
+BlocBuilder<ThemeCubit, AppTheme>(
+  builder: (context, theme) => Scaffold(
+    backgroundColor: theme.background,
+    body: Stack(
+      children: [
+        ParticleBackground(theme: theme), // CustomPainter
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                const Spacer(flex: 2),
+                AppLogo(),
+                const Spacer(flex: 3),
+                PlayButton(onTap: () => context.pushNamed('game', extra: GameMode.classic)),
+                const SizedBox(height: 16),
+                DailyButton(onTap: () => context.pushNamed('game', extra: GameMode.daily)),
+                const SizedBox(height: 16),
+                ZenButton(onTap: () => context.pushNamed('game', extra: GameMode.zen)),
+                const Spacer(flex: 2),
+                BottomIconRow(),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  ),
+)
+```
+
+---
+
+#### SCR-03: Game Screen
+
+**Full layout (portrait, 9:19.5):**
+```
+┌──────────────────────────────────────┐
+│  [☰]      ColorZen     [⭐ 2,450]   │  ← Top bar: 56px
+├──────────────────────────────────────┤
+│                                      │
+│   SCORE: 2,450        BEST: 5,120   │  ← Score row: 48px
+│                                      │
+├──────────────────────────────────────┤
+│  NEXT  │  [▪▪] │ [▪▪▪] │ [▪]       │  ← Next preview tray: 48px
+├──────────────────────────────────────┤
+│                                      │
+│  ┌────────────────────────────────┐  │
+│  │                                │  │
+│  │         9 × 9  GRID            │  │  ← Grid: 52% screen height
+│  │    (each cell rounded 4px)     │  │     (dynamic, calculated)
+│  │                                │  │
+│  └────────────────────────────────┘  │
+│                                      │
+│  ┌────────────────────────────────┐  │
+│  │                                │  │  ← Piece tray: 120px
+│  │  [Piece 1]  [Piece 2]  [Piece3]│  │
+│  │                                │  │
+│  └────────────────────────────────┘  │
+│                                      │
+│  [Daily Challenge]      [Zen Mode]   │  ← Mode switcher: 44px
+└──────────────────────────────────────┘
+```
+
+**Grid Cell Calculation:**
+```dart
+double gridWidth = MediaQuery.of(context).size.width - 32; // 16px padding each side
+double cellSize = gridWidth / 9;
+double borderRadius = cellSize * 0.15;
+double cellGap = 2.0;
+```
+
+**Grid Cell Widget:**
+```dart
+class GridCell extends StatelessWidget {
+  final BlockColor? color; // null = empty
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 100),
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(size * 0.15),
+        color: color == null 
+          ? AppColors.cellEmpty  // #161630 + inner shadow effect
+          : AppColors.forBlock(color!),
+        gradient: color != null ? LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.forBlock(color!).lighten(0.15),
+            AppColors.forBlock(color!),
+          ],
+        ) : null,
+        border: color != null ? Border(
+          top: BorderSide(color: AppColors.forBlock(color!).lighten(0.25), width: 1.5),
+          left: BorderSide(color: AppColors.forBlock(color!).lighten(0.25), width: 1.5),
+          bottom: BorderSide.none,
+          right: BorderSide.none,
+        ) : null,
+      ),
+    );
+  }
+}
+```
+
+**Piece Tray Widget (drag source):**
+```dart
+class PieceTray extends StatelessWidget {
+  final List<Piece?> pieces; // null = already placed
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 120,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,        // #1A1A35
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: pieces.map((piece) => piece == null
+          ? const SizedBox(width: 80) // ghost placeholder
+          : DraggablePiece(piece: piece)
+        ).toList(),
+      ),
+    );
+  }
+}
+```
+
+**DraggablePiece — drag behavior:**
+```dart
+class DraggablePiece extends StatefulWidget {
+  final Piece piece;
+  // ...
+}
+
+// On pan start: scale to 1.12, offset finger by -20px Y
+// On pan update: move piece center to finger position - 20px Y
+// On pan end:
+//   - Calculate target grid cell from drop position
+//   - Dispatch PlacePieceEvent to GameBloc
+//   - On invalid: wiggle animation + return to tray
+//   - On valid: place animation + update state
+```
+
+---
+
+#### SCR-04: Game Over Screen
+
+**Presentation:** Modal bottom sheet sliding up (400ms ease-out) with blurred dark overlay.
+
+**Layout:**
+```
+┌────────────────────────────────┐
+│                                │  ← Dark overlay, 70% opacity, blurred
+│  ┌──────────────────────────┐  │
+│  │      GAME OVER           │  │  ← ExtraBold 26sp
+│  │                          │  │
+│  │     12,450               │  │  ← Score, count-up animation
+│  │                          │  │
+│  │    ⭐ NEW BEST! 🎉       │  │  ← Golden, only if new record
+│  │                          │  │
+│  │  Lines: 48  Combo: 5×    │  │
+│  │  Blocks placed: 92       │  │
+│  │                          │  │
+│  │  [🔄 PLAY AGAIN]         │  │  ← Primary button
+│  │  [🏠 HOME]               │  │  ← Secondary
+│  │  [📤 SHARE SCORE]        │  │  ← Ghost (Daily only)
+│  └──────────────────────────┘  │
+└────────────────────────────────┘
+```
+
+**Card spec:** background `#1A1A35`, border radius 24px, padding 24px, centered, max width 340px.
+
+**Score count-up animation:**
+```dart
+// Animate from 0 to finalScore over 1200ms using CountAnimator widget
+// Uses Curves.easeOut
+// Each digit flips with a ticker animation
+```
+
+**Flutter Widget Tree:**
+```dart
+showModalBottomSheet(
+  context: context,
+  isScrollControlled: true,
+  backgroundColor: Colors.transparent,
+  builder: (_) => BackdropFilter(
+    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+    child: Container(
+      color: Colors.black54,
+      child: Center(
+        child: GameOverCard(state: gameOverState)
+          .animate()
+          .slideY(begin: 1.0, end: 0.0, duration: 400.ms, curve: Curves.easeOut),
+      ),
+    ),
+  ),
+)
+```
+
+---
+
+#### SCR-05: Daily Challenge Result Card (Generated Image)
+
+**Dimensions:** 1080×1080px (square, for social media compatibility)
+
+**Layout:**
+```
+┌───────────────────────────────────────┐
+│  ColorZen                             │
+│  Daily Challenge — July 23, 2026      │
+│                                       │
+│  Score: 12,450                        │
+│                                       │
+│  ⬛🟥🟨⬛🟩                           │
+│  🟦⬛🟪🟥⬛                           │
+│  ⬛🟧🟨🟦🟩                           │  ← 5×5 emoji grid
+│  🟩⬛🟥⬛🟪                           │
+│  ⬛🟨🟧🟩⬛                           │
+│                                       │
+│  "Place. Clear. Zen."                 │
+│                                       │
+│  colorzen.app (store link)            │
+└───────────────────────────────────────┘
+```
+
+The 5×5 grid is sampled from the final 9×9 grid state (center 5×5 region).
+
+---
+
+#### SCR-06: Themes Screen
+
+**Layout:**
+```
+┌─────────────────────────────────┐
+│  ← Themes                       │  ← App bar
+├─────────────────────────────────┤
+│  ┌──────────────┐ ┌────────────┐│
+│  │ Midnight Zen │ │ Desi       ││
+│  │ ●●●●●        │ │ Rangoli🔒  ││
+│  │ [SELECTED]   │ │ 5,000 pts  ││
+│  └──────────────┘ └────────────┘│
+│                                 │
+│  ┌──────────────┐               │
+│  │ Arctic Ice 🔒│               │
+│  │ ●●●●●        │               │
+│  │ 10,000 pts   │               │
+│  └──────────────┘               │
+└─────────────────────────────────┘
+```
+
+**Theme Card Spec:**
+- Width: (screen_width - 48px) / 2
+- Height: 160px
+- Background: theme's surface color
+- Border radius: 16px
+- Selected: 2px border with `box-shadow` glow in primary accent color
+- Locked: overlay with 50% opacity dark tint + lock icon centered
+
+**Color Swatches:** 5 circles, 20px diameter, 4px gap, showing theme's block palette.
+
+---
+
+#### SCR-07: Settings Screen
+
+**Layout:** Standard scrollable list with section headers.
+
+```dart
+Scaffold(
+  appBar: AppBar(title: Text('Settings')),
+  body: ListView(
+    children: [
+      SettingsSectionHeader('Audio'),
+      ToggleTile(title: 'Sound Effects', hive: 'sfx_enabled'),
+      ToggleTile(title: 'Music', hive: 'music_enabled'),
+      SliderTile(title: 'Music Volume', hive: 'music_volume'),
+      SettingsSectionHeader('Haptics'),
+      ToggleTile(title: 'Haptic Feedback', hive: 'haptic_enabled'),
+      SettingsSectionHeader('Notifications'),
+      ToggleTile(title: 'Daily Challenge Reminder', hive: 'notif_enabled'),
+      SettingsSectionHeader('Account'),
+      ActionTile(title: 'Remove Ads', onTap: () => iapService.purchase()),
+      ActionTile(title: 'Restore Purchases', onTap: () => iapService.restore()),
+      SettingsSectionHeader('Info'),
+      ActionTile(title: 'Rate the App', onTap: () => openStoreRating()),
+      ActionTile(title: 'Privacy Policy', onTap: () => launchUrl(privacyUrl)),
+      ActionTile(title: 'Terms of Service', onTap: () => launchUrl(tosUrl)),
+    ],
+  ),
+)
+```
+
+### 6.5 Animation & Micro-Interaction Catalog
+
+All durations are in milliseconds. All animations use `flutter_animate` unless noted.
+
+| ID | Name | Trigger | Duration | Behavior |
+|----|------|---------|----------|----------|
+| ANI-01 | Piece Pickup | Drag start | 120ms | Scale 1.0 → 1.12, translateY -20px, ease-out |
+| ANI-02 | Piece Invalid Drop | Invalid release | 200ms | Shake ±8px × 3 oscillations, return to origin |
+| ANI-03 | Piece Valid Placement | Valid release | 150ms per block | Each block: scale 0 → 1.15 → 1.0, staggered 30ms |
+| ANI-04 | Line Clear Sweep | Line clears | 80ms/cell (300ms total) | Cells flash white (#FFFFFF), left→right, fade to transparent |
+| ANI-05 | Score Pop | After line clear | 600ms | "+100" text rises 40px, fades, ease-out |
+| ANI-06 | Combo Banner | Combo ≥ 3 | 800ms | "COMBO ×1.5!" slides in from right, bounces, holds 400ms, fades |
+| ANI-07 | Color Bonus Burst | Color bonus earned | 500ms | 10 golden particles burst from cleared line center |
+| ANI-08 | Game Over Modal | Game ends | 400ms | Modal slides up from bottom, backdrop blurs (8px) |
+| ANI-09 | High Score Shimmer | New best set | 1200ms × 3 | "BEST" label shimmer sweep (gold `#FFD700` gradient) |
+| ANI-10 | Button Press | Any tap | 80ms + 80ms | Scale 0.96 on press, return to 1.0 on release |
+| ANI-11 | Daily Countdown Pulse | Every 1 second tick | 300ms | Subtle scale 1.0 → 1.04 → 1.0 on timer label |
+| ANI-12 | Theme Unlock Confetti | Theme unlock | 1000ms | 30 colored particles, physics-based fall, from top |
+| ANI-13 | Splash Logo | App launch | 600ms | Scale 0.6 → 1.0 + fadeIn, ease-out |
+| ANI-14 | Splash Tagline | App launch | 400ms (delay 800ms) | FadeIn only |
+| ANI-15 | Home Particles | Home screen idle | Loop | 15 slow-drifting circles, 5% opacity |
+| ANI-16 | Grid Ghost Preview | During drag | Instant | Valid: piece color at 40% opacity. Invalid: red at 30% |
+| ANI-17 | Score Count-Up | Game over appears | 1200ms | Numeric interpolation 0 → finalScore, ease-out |
+| ANI-18 | New Best Golden | Game over, new record | 600ms | "NEW BEST! 🎉" pulse + golden color |
+| ANI-19 | Screen Transition | Route change | 300ms | Fade transition (no slide; zen feel) |
+
+**flutter_animate code snippets:**
+
+```dart
+// ANI-01: Piece Pickup
+pieceDragWidget
+  .animate(target: isDragging ? 1 : 0)
+  .scale(begin: 1.0, end: 1.12, duration: 120.ms, curve: Curves.easeOut)
+  .moveY(begin: 0, end: -20, duration: 120.ms, curve: Curves.easeOut);
+
+// ANI-02: Invalid Drop
+pieceWidget
+  .animate(onPlay: (c) => c.repeat(count: 3))
+  .shakeX(amount: 8, hz: 4, duration: 200.ms)
+  .then()
+  .moveXY(end: Offset.zero);
+
+// ANI-03: Valid Placement (per block, staggered)
+blockWidget
+  .animate(delay: (blockIndex * 30).ms)
+  .scale(begin: 0.0, end: 1.0, duration: 100.ms)
+  .then()
+  .scale(begin: 1.0, end: 1.15, duration: 30.ms)
+  .then()
+  .scale(begin: 1.15, end: 1.0, duration: 30.ms);
+
+// ANI-04: Line Clear Sweep (cell by cell)
+for (int i = 0; i < 9; i++) {
+  cells[i]
+    .animate(delay: (i * 80).ms)
+    .custom(duration: 300.ms, builder: (_, value, child) {
+      return ColorFiltered(
+        colorFilter: ColorFilter.mode(
+          Colors.white.withOpacity(1 - value),
+          BlendMode.srcATop,
+        ),
+        child: child,
+      );
+    })
+    .fadeOut(duration: 200.ms, delay: 100.ms);
+}
+
+// ANI-05: Score Pop
+floatingScoreText
+  .animate()
+  .moveY(begin: 0, end: -40, duration: 600.ms, curve: Curves.easeOut)
+  .fadeOut(duration: 600.ms, curve: Curves.easeIn);
+
+// ANI-09: High Score Shimmer
+bestLabel
+  .animate(onPlay: (c) => c.repeat(count: 3))
+  .shimmer(duration: 1200.ms, color: const Color(0xFFFFD700));
+
+// ANI-12: Theme Unlock Confetti
+ConfettiWidget(
+  confettiController: confettiController,
+  blastDirectionality: BlastDirectionality.explosive,
+  colors: theme.blockColors,
+  numberOfParticles: 30,
+  maxBlastForce: 20,
+  minBlastForce: 10,
+  emissionFrequency: 0.02,
+  gravity: 0.2,
+)
+```
+
+### 6.6 Component Library
+
+#### AppButton
+
+```dart
+// Primary: filled accent background
+// Secondary: outlined, transparent background
+// Ghost: text only, no background or border
+
+class AppButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onTap;
+  final AppButtonStyle style;       // primary | secondary | ghost
+  final Widget? leadingIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => _animController.forward(),
+      onTapUp: (_) { _animController.reverse(); onTap?.call(); },
+      onTapCancel: () => _animController.reverse(),
+      child: AnimatedScale(
+        scale: _isPressed ? 0.96 : 1.0,
+        duration: const Duration(milliseconds: 80),
+        child: Container(
+          height: 56,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            color: style == AppButtonStyle.primary ? AppColors.accent : Colors.transparent,
+            border: style == AppButtonStyle.secondary
+              ? Border.all(color: AppColors.accent, width: 1.5)
+              : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (leadingIcon != null) ...[leadingIcon!, const SizedBox(width: 8)],
+              Text(label, style: AppTextStyles.button),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+```
+
+#### GameGrid
+
+```dart
+class GameGrid extends StatelessWidget {
+  final List<List<BlockColor?>> grid;     // 9×9
+  final List<List<bool>> highlightMask;  // valid drop ghost
+  final Color? ghostColor;               // null if no ghost
+  final bool isGhostValid;
+
+  @override
+  Widget build(BuildContext context) {
+    final cellSize = (MediaQuery.of(context).size.width - 32) / 9;
+    return RepaintBoundary(
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.gridBackground,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF2A2A5A), width: 1),
+        ),
+        child: GridView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 9,
+            mainAxisSpacing: 2,
+            crossAxisSpacing: 2,
+          ),
+          itemCount: 81,
+          itemBuilder: (_, index) {
+            final row = index ~/ 9;
+            final col = index % 9;
+            final color = highlightMask[row][col]
+              ? (isGhostValid ? ghostColor!.withOpacity(0.4) : const Color(0x4DFF4444))
+              : AppColors.forBlock(grid[row][col]);
+            return RepaintBoundary(child: GridCell(color: grid[row][col], ghostColor: color, cellSize: cellSize));
+          },
+        ),
+      ),
+    );
+  }
+}
+```
+
+#### ScoreDisplay
+
+```dart
+class ScoreDisplay extends StatelessWidget {
+  final int score;
+  final int bestScore;
+  final bool isNewBest;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        ScoreColumn(label: 'SCORE', value: score, animated: true),
+        ScoreColumn(
+          label: 'BEST',
+          value: bestScore,
+          animated: false,
+          shimmer: isNewBest,
+        ),
+      ],
+    );
+  }
+}
+```
+
+#### NextPiecesTray
+
+```dart
+class NextPiecesTray extends StatelessWidget {
+  final List<Piece> nextPieces; // always 3
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Text('NEXT', style: AppTextStyles.miniLabel),
+          const SizedBox(width: 8),
+          ...nextPieces.map((p) => MiniPiecePreview(piece: p)),
+        ],
+      ),
+    );
+  }
+}
+```
+
+### 6.7 Responsive Considerations
+
+The game targets screen widths from 360px (minimum) to 430px (maximum). All layout values are calculated dynamically.
+
+| Element | 360px screen | 430px screen |
+|---------|-------------|-------------|
+| Cell size | (360 - 32) / 9 = 36.4px | (430 - 32) / 9 = 44.2px |
+| Grid height | ~329px | ~400px |
+| Piece block in tray | 36.4 × 0.85 = 30.9px | 44.2 × 0.85 = 37.6px |
+| Score font | 28sp (dynamic) | 28sp (dynamic) |
+
+**Rules:**
+- No hardcoded pixel values for game elements; use `MediaQuery.of(context).size.width`.
+- All text uses `sp` units, which auto-scale with system font size setting.
+- Minimum tap target: 44×44 logical pixels (enforced even on small screens by using `GestureDetector` with `behavior: HitTestBehavior.opaque` and padding).
+- On very tall screens (aspect ratio > 21:9), add additional `Spacer` between tray and mode switcher.
+
+---
+
+## 7. Game Design Document (GDD) Summary
+
+### 7.1 Core Loop Diagram
+
+```
+START SESSION
+      │
+      ▼
+┌─────────────────┐
+│  Receive 3 Pieces│
+│  (+ see next 3) │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐     No valid placement
+│  Player drags   │────────────────────────►  GAME OVER
+│  piece to grid  │
+└────────┬────────┘
+         │ Valid placement
+         ▼
+┌─────────────────┐
+│  Piece locks    │
+│  to grid cells  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────────┐
+│  Check for complete │
+│  rows / columns     │
+└────────┬────────────┘
+         │
+    ┌────┴────┐
+    │ Lines   │ No lines found
+    │ found?  │──────────────────► Combo breaks
+    └────┬────┘
+         │ Yes
+         ▼
+┌─────────────────────┐
+│  Clear lines        │
+│  Calculate score    │──► Play animations (ANI-04, ANI-05, ANI-06, ANI-07)
+│  Increment combo    │
+└────────┬────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│  Tray empty?        │
+│  Generate new 3     │
+│  pieces             │
+└────────┬────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│  Save to Hive       │
+└────────┬────────────┘
+         │
+         └──────────────► (back to top)
+```
+
+### 7.2 Difficulty Progression
+
+ColorZen is an endless game with implicit difficulty (no explicit level numbers). Perceived difficulty increases naturally because:
+
+1. **Grid fills up** — As pieces accumulate, the board becomes increasingly constrained. This is self-imposed by the player's strategy choices.
+
+2. **Piece variety creates tension** — Larger pieces (4×4, T-shapes) become harder to place on a crowded board than smaller ones (monomino, domino).
+
+3. **Color bonus incentivizes risk** — Players must decide: place a piece efficiently (easier) or hold out for a same-color line (harder but more rewarding).
+
+4. **Combo pressure** — Maintaining combos requires planning multiple moves ahead, increasing cognitive load over time.
+
+**There is no artificial difficulty scaling.** Piece size distribution remains constant throughout the game. The perceived difficulty arc is entirely emergent from board state.
+
+### 7.3 Retention Mechanics
+
+| Mechanic | Retention Goal | Implementation |
+|---------|---------------|----------------|
+| Daily Challenge | D1, D7, D30 retention | Seeded daily puzzle, share card, countdown timer on home screen |
+| Personal Best | Competitive return | Always-visible best score, golden animation on new record |
+| Theme Unlock | Long-session motivation | Score milestones at 5K and 10K unlock themes |
+| Progress Save | Immediate return | Game auto-saves every move; player returns to exact state |
+| Hint System (P1) | Reduce friction, reduce churn | Rewarded ad provides one optimal placement hint |
+| Zen Mode | Relaxation sessions | Timer-free, score-free, ambient music drives long sessions |
+| Share Card | Organic acquisition | Daily Challenge completion generates shareable image |
+
+### 7.4 Monetization Strategy
+
+**Revenue Streams:**
+
+| Stream | Implementation | Frequency |
+|--------|---------------|-----------|
+| Interstitial ads | Game over screen | Max 1 per 3 minutes |
+| Rewarded ads | Player-triggered hint | On demand |
+| Remove Ads IAP | One-time purchase | Once |
+
+**Design principles:**
+- Ad experience never interrupts gameplay. Zero mid-game ads.
+- Remove Ads is the only IAP. No pay-to-win, no energy systems, no premium currency.
+- Rewarded ads are always optional and player-triggered. No coercion.
+- The free experience is fully complete. IAP is quality-of-life, not a gate.
+
+**Estimated LTV model:**
+- Primary revenue: interstitial impressions (high-volume, casual audience)
+- Secondary: rewarded ad watches (players who want hints but haven't paid)
+- Tertiary: Remove Ads conversion (~2–5% of engaged players)
+
+---
+
+## 8. Data Models & Architecture
+
+### 8.1 Entity Relationship
+
+```
+GameSession ──────────────────────────────────────────┐
+│ id: String                                           │
+│ mode: GameMode                                       │
+│ grid: List<List<BlockColor?>>                        │
+│ currentPieces: List<Piece>                           │
+│ nextPieces: List<Piece>                              │
+│ score: int                                           │
+│ bestScore: int                                       │
+│ linesCleared: int                                    │
+│ blocksPlaced: int                                    │
+│ comboCount: int                                      │
+│ isGameOver: bool                                     │
+└──────────────────────────────────────────────────────┘
+         │                    │
+         ▼                    ▼
+   Piece                BlockColor (enum)
+   │ shape: List<List<bool>>  │ coral
+   │ color: BlockColor         │ mint
+   │ (max 4×4)                │ yellow
+                              │ purple
+                              │ skyBlue
+                              │ orange
+
+AppSettings
+│ sfxEnabled: bool
+│ musicEnabled: bool
+│ musicVolume: double (0.0–1.0)
+│ hapticEnabled: bool
+│ notificationsEnabled: bool
+│ adsRemoved: bool
+
+ThemeState
+│ selectedTheme: AppTheme (midnightZen | desiRangoli | arcticIce)
+│ unlockedThemes: List<AppTheme>
+
+DailyChallenge
+│ date: String (yyyy-MM-dd)
+│ completed: bool
+│ score: int?
+│ gridSnapshot: List<List<BlockColor?>>? (for share card)
+
+LifetimeStats
+│ totalLinesCleared: int
+│ totalBlocksPlaced: int
+│ totalGamesPlayed: int
+│ classicBest: int
+│ dailyBest: int
+```
+
+### 8.2 BLoC Architecture
+
+```
+GameBloc
+├── Events
+│   ├── GameStarted(GameMode mode)
+│   ├── PiecePlaced(Piece piece, int row, int col)
+│   ├── GameReset()
+│   └── GameLoaded() ← from Hive on app start
+│
+├── States
+│   ├── GameInitial
+│   ├── GameLoading
+│   ├── GamePlaying(GameSession session)
+│   ├── GameLineClear(GameSession session, List<int> clearedRows, List<int> clearedCols, int scoreGained)
+│   └── GameOver(GameSession session)
+│
+└── Dependencies: GameRepository, PieceGenerator, LineClearEngine, ScoreCalculator
+
+ScoreCubit (Cubit<ScoreState>)
+├── State: ScoreState { score, bestScore, isNewBest, linesCleared, comboCount }
+└── Methods: addScore(int points), resetScore(), loadBest(GameMode mode)
+
+ThemeCubit (Cubit<AppTheme>)
+├── State: AppTheme (current theme)
+└── Methods: selectTheme(AppTheme), unlockTheme(AppTheme), loadSaved()
+
+SettingsCubit (Cubit<AppSettings>)
+├── State: AppSettings
+└── Methods: toggleSfx(), toggleMusic(), setVolume(double), toggleHaptic(), toggleNotifications()
+
+DailyChallengeCubit (Cubit<DailyChallengeState>)
+├── States: DailyChallengeAvailable | DailyChallengeActive | DailyChallengeCompleted
+└── Methods: startChallenge(), completeChallenge(int score, snapshot)
+
+AdCubit (Cubit<AdState>)
+├── States: AdReady | AdLoading | AdShowing | AdError
+└── Methods: loadInterstitial(), showInterstitial(), loadRewarded(), showRewarded()
+```
+
+**BLoC Skeleton — GameBloc:**
+
+```dart
+class GameBloc extends Bloc<GameEvent, GameState> {
+  final GameRepository _repo;
+  final PieceGenerator _pieceGen;
+  final LineClearEngine _clearEngine;
+  final ScoreCalculator _scoreCalc;
+
+  GameBloc({
+    required GameRepository repo,
+    required PieceGenerator pieceGen,
+    required LineClearEngine clearEngine,
+    required ScoreCalculator scoreCalc,
+  })  : _repo = repo,
+        _pieceGen = pieceGen,
+        _clearEngine = clearEngine,
+        _scoreCalc = scoreCalc,
+        super(GameInitial()) {
+    on<GameStarted>(_onGameStarted);
+    on<GameLoaded>(_onGameLoaded);
+    on<PiecePlaced>(_onPiecePlaced);
+    on<GameReset>(_onGameReset);
+  }
+
+  Future<void> _onGameStarted(GameStarted event, Emitter<GameState> emit) async {
+    emit(GameLoading());
+    final session = await _repo.loadSession(event.mode) ?? _createNewSession(event.mode);
+    emit(GamePlaying(session));
+  }
+
+  Future<void> _onPiecePlaced(PiecePlaced event, Emitter<GameState> emit) async {
+    final currentState = state as GamePlaying;
+    final newGrid = _placePiece(currentState.session.grid, event.piece, event.row, event.col);
+    final clearResult = _clearEngine.detectAndClear(newGrid);
+    final newScore = _scoreCalc.calculate(
+      clearResult.linesCleared,
+      clearResult.colorBonuses,
+      currentState.session.comboCount,
+    );
+    
+    final newSession = currentState.session.copyWith(
+      grid: clearResult.grid,
+      score: currentState.session.score + newScore,
+      // ... update all fields
+    );
+
+    await _repo.saveSession(newSession);
+
+    if (clearResult.linesCleared > 0) {
+      emit(GameLineClear(newSession, clearResult.clearedRows, clearResult.clearedCols, newScore));
+      // Allow animation to play, then continue to GamePlaying
+      await Future.delayed(const Duration(milliseconds: 350));
+    }
+
+    if (_isGameOver(newSession)) {
+      emit(GameOver(newSession));
+    } else {
+      emit(GamePlaying(newSession));
+    }
+  }
+}
+```
+
+### 8.3 Hive Schema
+
+See Appendix D for complete box definitions.
+
+**TypeAdapters to generate (`@HiveType`):**
+
+```dart
+@HiveType(typeId: 0)
+class GameSessionHive extends HiveObject {
+  @HiveField(0) late List<List<int?>> grid;       // int? maps to BlockColor index
+  @HiveField(1) late List<PieceHive> currentPieces;
+  @HiveField(2) late List<PieceHive> nextPieces;
+  @HiveField(3) late int score;
+  @HiveField(4) late int bestScore;
+  @HiveField(5) late int linesCleared;
+  @HiveField(6) late int blocksPlaced;
+  @HiveField(7) late int comboCount;
+  @HiveField(8) late int mode;                    // GameMode.index
+  @HiveField(9) late bool isGameOver;
+}
+
+@HiveType(typeId: 1)
+class PieceHive extends HiveObject {
+  @HiveField(0) late List<List<bool>> shape;
+  @HiveField(1) late int colorIndex;              // BlockColor.index
+}
+
+@HiveType(typeId: 2)
+class AppSettingsHive extends HiveObject {
+  @HiveField(0) late bool sfxEnabled;
+  @HiveField(1) late bool musicEnabled;
+  @HiveField(2) late double musicVolume;
+  @HiveField(3) late bool hapticEnabled;
+  @HiveField(4) late bool notificationsEnabled;
+  @HiveField(5) late bool adsRemoved;
+}
+
+@HiveType(typeId: 3)
+class ThemeStateHive extends HiveObject {
+  @HiveField(0) late int selectedThemeIndex;
+  @HiveField(1) late List<int> unlockedThemeIndices;
+}
+
+@HiveType(typeId: 4)
+class DailyChallengeHive extends HiveObject {
+  @HiveField(0) late String date;
+  @HiveField(1) late bool completed;
+  @HiveField(2) late int score;
+}
+
+@HiveType(typeId: 5)
+class LifetimeStatsHive extends HiveObject {
+  @HiveField(0) late int totalLinesCleared;
+  @HiveField(1) late int totalBlocksPlaced;
+  @HiveField(2) late int totalGamesPlayed;
+  @HiveField(3) late int classicBest;
+  @HiveField(4) late int dailyBest;
+  @HiveField(5) late int zenGamesPlayed;
+}
+```
+
+### 8.4 API/Service Layer
+
+The application has no remote API. The service layer abstracts:
+
+```
+GameRepository (abstract)
+├── impl: HiveGameRepository
+├── loadSession(GameMode) → GameSession?
+└── saveSession(GameSession) → void
+
+AdService (abstract)
+├── impl: AdMobService
+├── loadInterstitial() → Future<void>
+├── showInterstitial(BuildContext) → Future<void>
+├── loadRewarded() → Future<void>
+└── showRewarded(BuildContext, onEarned: void Function()) → Future<void>
+
+AudioService (abstract)
+├── impl: AudioPlayersService
+├── playsfx(SfxType) → void
+├── playMusic(MusicType) → void
+├── stopMusic() → void
+└── setVolume(double) → void
+
+IAPService (abstract)
+├── impl: InAppPurchaseService
+├── purchase() → Future<void>
+└── restore() → Future<void>
+
+ShareService (abstract)
+├── impl: SharePlusService
+└── shareDailyResult(GameSession) → Future<void>
+
+HapticService (abstract)
+├── impl: FlutterHapticService
+├── light() → void
+├── medium() → void
+├── heavy() → void
+└── selection() → void
+```
+
+All services are registered with `get_it` in `lib/core/di/injection.dart` and injected into BLoCs via constructors.
+
+---
+
+## 9. Testing Requirements
+
+### 9.1 Unit Tests
+
+Location: `test/unit/`
+
+**GameEngine Tests (`test/unit/game_engine_test.dart`):**
+
+| Test ID | Test Case | Expected Outcome |
+|---------|----------|-----------------|
+| UT-ENG-01 | Place piece on empty grid | Grid updates correctly, cells match piece shape |
+| UT-ENG-02 | Place piece on partially filled grid | Only target cells filled, others unchanged |
+| UT-ENG-03 | Attempt placement on occupied cell | Returns `PlacementResult.invalid` |
+| UT-ENG-04 | Attempt placement out of grid bounds | Returns `PlacementResult.invalid` |
+| UT-ENG-05 | Game over detection — all pieces blocked | Returns `true` for game over |
+| UT-ENG-06 | Game over detection — at least one valid placement | Returns `false` |
+
+**LineClearEngine Tests (`test/unit/line_clear_test.dart`):**
+
+| Test ID | Test Case | Expected Outcome |
+|---------|----------|-----------------|
+| UT-CLR-01 | Single complete row | One row cleared, score = 100 |
+| UT-CLR-02 | Single complete column | One column cleared, score = 100 |
+| UT-CLR-03 | One row + one column (simultaneous) | Both cleared, score = 250 |
+| UT-CLR-04 | Three lines (2 rows + 1 col) | Score = 450 |
+| UT-CLR-05 | Color bonus — single color row | Score = 100 × 2 = 200 |
+| UT-CLR-06 | Color bonus — mixed color row | No bonus, score = 100 |
+| UT-CLR-07 | Combo — 3 consecutive clearing moves | Third move applies 1.5× multiplier |
+| UT-CLR-08 | Combo break | Move without clear resets combo to 0 |
+| UT-CLR-09 | Intersecting row + column clear | Intersection cell cleared once (no double-count) |
+
+**PieceGenerator Tests (`test/unit/piece_generator_test.dart`):**
+
+| Test ID | Test Case | Expected Outcome |
+|---------|----------|-----------------|
+| UT-GEN-01 | Generate 9 pieces (fairness) | All 6 BlockColor values appear at least once |
+| UT-GEN-02 | Daily seed determinism | Same date → same first 50 pieces on 1000 runs |
+| UT-GEN-03 | Shape variety | No shape appears >2 times in 9-piece window |
+| UT-GEN-04 | Generated set size | Always returns exactly 3 pieces |
+
+**ScoreCalculator Tests (`test/unit/score_calculator_test.dart`):**
+
+| Test ID | Test Case | Expected Outcome |
+|---------|----------|-----------------|
+| UT-SCR-01 | 1 line, no bonus | 100 |
+| UT-SCR-02 | 2 lines, no bonus | 250 |
+| UT-SCR-03 | 3 lines, no bonus | 450 |
+| UT-SCR-04 | 1 line, color bonus | 200 |
+| UT-SCR-05 | 2 lines, both color bonus | 500 |
+| UT-SCR-06 | 1 line, combo active | 150 |
+| UT-SCR-07 | 2 lines, 1 color bonus, combo | (100 + 200) × 1.5 = 450 |
+
+### 9.2 Widget Tests
+
+Location: `test/widget/`
+
+| Test ID | Test Case |
+|---------|----------|
+| WT-GRD-01 | `GameGrid` renders 81 cells for a 9×9 grid |
+| WT-GRD-02 | `GameGrid` applies correct block color to filled cells |
+| WT-GRD-03 | `GameGrid` renders empty cells with empty style |
+| WT-GRD-04 | `GameGrid` renders ghost overlay correctly during drag |
+| WT-TRY-01 | `PieceTray` renders 3 pieces |
+| WT-TRY-02 | `PieceTray` renders null slots as invisible |
+| WT-SCR-01 | `ScoreDisplay` updates when BLoC state changes |
+| WT-SCR-02 | `ScoreDisplay` shows shimmer on `isNewBest = true` |
+| WT-BTN-01 | `AppButton` triggers callback on tap |
+| WT-BTN-02 | `AppButton` scales on press |
+| WT-HOM-01 | `HomeScreen` shows three mode buttons |
+| WT-HOM-02 | `HomeScreen` navigates to game on PLAY tap |
+
+### 9.3 Integration Tests
+
+Location: `integration_test/`
+
+| Test ID | Scenario |
+|---------|---------|
+| IT-LOOP-01 | Complete a full game loop: start → place 3 pieces → line clear → game continues |
+| IT-LOOP-02 | Game over: fill board until no moves remain → game over screen appears |
+| IT-SAVE-01 | Place piece → force quit → relaunch → game state restored exactly |
+| IT-DAILY-01 | Start Daily Challenge → complete → share card generated → cannot start again same day |
+| IT-THEME-01 | Unlock theme via score milestone → theme appears unlocked in Themes screen |
+| IT-IAP-01 | Purchase Remove Ads → interstitial no longer shown on game over |
+
+### 9.4 Performance Tests
+
+| Test ID | Metric | Tool | Pass Threshold |
+|---------|-------|------|---------------|
+| PT-FPS-01 | Frame rate during piece drag | Flutter DevTools | ≥ 60fps, no jank |
+| PT-FPS-02 | Frame rate during line clear animation | Flutter DevTools | ≥ 60fps |
+| PT-FPS-03 | Frame rate during particle background | Flutter DevTools | ≥ 60fps |
+| PT-START-01 | Cold start time (baseline device) | Stopwatch + profiler | < 2,000ms |
+| PT-MEM-01 | Memory during active gameplay | Flutter DevTools Memory | < 150 MB |
+| PT-SAVE-01 | Hive write duration per piece placement | Dart Stopwatch | < 16ms |
+| PT-LOAD-01 | Hive read on app launch | Dart Stopwatch | < 200ms |
+
+---
+
+## 10. Appendices
+
+### Appendix A: Complete Piece Shape Library
+
+All 20 piece shapes defined as `List<List<bool>>`. `true` = block present. All shapes are in their minimal bounding box.
+
+```dart
+/// The complete piece shape library.
+/// Each shape is a List<List<bool>> where true = filled cell.
+/// Shapes are NOT rotated at runtime — what you define here is what players see.
+
+const List<List<List<bool>>> kPieceShapes = [
+
+  // ── MONOMINO (1) ──────────────────────────────────────────────
+  // Shape 0: Single block
+  [[true]],
+
+  // ── DOMINOES (2) ──────────────────────────────────────────────
+  // Shape 1: Horizontal domino
+  [[true, true]],
+
+  // Shape 2: Vertical domino
+  [[true],
+   [true]],
+
+  // ── TROMINOES (3) ─────────────────────────────────────────────
+  // Shape 3: Horizontal tromino
+  [[true, true, true]],
+
+  // Shape 4: Vertical tromino
+  [[true],
+   [true],
+   [true]],
+
+  // Shape 5: L-tromino
+  [[true, false],
+   [true, true]],
+
+  // Shape 6: J-tromino
+  [[false, true],
+   [true,  true]],
+
+  // ── TETROMINOES (4) ───────────────────────────────────────────
+  // Shape 7: I-tetromino (horizontal)
+  [[true, true, true, true]],
+
+  // Shape 8: I-tetromino (vertical)
+  [[true],
+   [true],
+   [true],
+   [true]],
+
+  // Shape 9: O-tetromino (2×2 square)
+  [[true, true],
+   [true, true]],
+
+  // Shape 10: T-tetromino
+  [[true,  true,  true],
+   [false, true, false]],
+
+  // Shape 11: L-tetromino
+  [[true, false],
+   [true, false],
+   [true, true]],
+
+  // Shape 12: J-tetromino
+  [[false, true],
+   [false, true],
+   [true,  true]],
+
+  // Shape 13: S-tetromino
+  [[false, true, true],
+   [true,  true, false]],
+
+  // Shape 14: Z-tetromino
+  [[true,  true, false],
+   [false, true, true]],
+
+  // ── PENTOMINOES / LARGER (5) ──────────────────────────────────
+  // Shape 15: Plus / Cross
+  [[false, true,  false],
+   [true,  true,  true],
+   [false, true,  false]],
+
+  // Shape 16: 3×3 Square (9 blocks)
+  [[true, true, true],
+   [true, true, true],
+   [true, true, true]],
+
+  // Shape 17: Large L (3 tall, 2 wide)
+  [[true, false],
+   [true, false],
+   [true, false],
+   [true, true]],
+
+  // Shape 18: Big horizontal bar (5 blocks)
+  [[true, true, true, true, true]],
+
+  // Shape 19: 2×3 rectangle
+  [[true, true, true],
+   [true, true, true]],
+
+];
+```
+
+**Piece Weight Distribution:**
+- Monomino (1 block): weight 5
+- Dominoes (2 blocks): weight 15
+- Trominoes (3 blocks): weight 25
+- Tetrominoes (4 blocks): weight 35
+- Pentominoes/Large (5+ blocks): weight 20
+
+This ensures small pieces appear frequently enough for relief, while large pieces create challenge.
+
+---
+
+### Appendix B: Color Palette Reference
+
+#### Theme 1: Midnight Zen
+
+| Token | Hex | Usage |
+|-------|-----|-------|
+| `background` | `#0D0D1A` | Screen background |
+| `gridBackground` | `#12122A` | Grid container fill |
+| `gridLine` | `#1E1E3F` | Grid cell gap color |
+| `cellEmpty` | `#161630` | Empty cell fill |
+| `surface` | `#1A1A35` | Cards, trays, modals |
+| `accentPrimary` | `#7C5CFC` | Buttons, highlights |
+| `accentSecondary` | `#00D4AA` | Secondary accents |
+| `textPrimary` | `#F0F0FF` | Main text |
+| `textSecondary` | `#8888AA` | Labels, hints |
+| `blockCoral` | `#FF6B6B` | Block color 1 |
+| `blockMint` | `#4ECDC4` | Block color 2 |
+| `blockYellow` | `#FFE66D` | Block color 3 |
+| `blockPurple` | `#A55EEA` | Block color 4 |
+| `blockSkyBlue` | `#45B7D1` | Block color 5 |
+| `blockOrange` | `#FF9F43` | Block color 6 |
+| `comboGold` | `#FFD700` | Combo text, shimmer |
+| `invalidRed` | `#FF4444` | Invalid ghost |
+
+#### Theme 2: Desi Rangoli
+
+| Token | Hex | Usage |
+|-------|-----|-------|
+| `background` | `#1A0A0A` | Screen background |
+| `gridBackground` | `#200F0F` | Grid container fill |
+| `gridLine` | `#3A1818` | Grid cell gap |
+| `cellEmpty` | `#1E0E0E` | Empty cell fill |
+| `surface` | `#241212` | Cards, trays |
+| `accentPrimary` | `#FF6B35` | Saffron orange accent |
+| `accentSecondary` | `#FFD700` | Gold accent |
+| `textPrimary` | `#FFF8F0` | Warm white text |
+| `textSecondary` | `#AA8877` | Muted terracotta |
+| `blockMagenta` | `#E91E8C` | Block color 1 |
+| `blockGold` | `#FFD700` | Block color 2 |
+| `blockPeacock` | `#00897B` | Block color 3 |
+| `blockRose` | `#FF6090` | Block color 4 |
+| `blockIvory` | `#FFFFF0` | Block color 5 |
+| `blockCrimson` | `#DC143C` | Block color 6 |
+
+#### Theme 3: Arctic Ice
+
+| Token | Hex | Usage |
+|-------|-----|-------|
+| `background` | `#0A1628` | Screen background |
+| `gridBackground` | `#0D1E35` | Grid container fill |
+| `gridLine` | `#1A3050` | Grid cell gap |
+| `cellEmpty` | `#0C1A2E` | Empty cell fill |
+| `surface` | `#102040` | Cards, trays |
+| `accentPrimary` | `#64D2FF` | Arctic cyan accent |
+| `accentSecondary` | `#E8F8FF` | Frost white |
+| `textPrimary` | `#EEF8FF` | Ice white text |
+| `textSecondary` | `#6688AA` | Muted ice blue |
+| `blockIceBlue` | `#7EC8E3` | Block color 1 |
+| `blockFrostWhite` | `#E8F4F8` | Block color 2 |
+| `blockGlacier` | `#52B3D9` | Block color 3 |
+| `blockLavender` | `#C5CAE9` | Block color 4 |
+| `blockArctic` | `#00BCD4` | Block color 5 |
+| `blockOcean` | `#1A237E` | Block color 6 |
+
+---
+
+### Appendix C: AdMob Unit ID Placeholders
+
+All IDs below are **test IDs** safe for use during development. Replace with production IDs before release build.
+
+```dart
+// lib/core/constants/admob_constants.dart
+
+class AdMobConstants {
+  // ── TEST IDs (Development Only) ─────────────────────────────────
+  static const String kTestInterstitialAndroid  = 'ca-app-pub-3940256099942544/1033173712';
+  static const String kTestInterstitialIOS      = 'ca-app-pub-3940256099942544/4411468910';
+  static const String kTestRewardedAndroid      = 'ca-app-pub-3940256099942544/5224354917';
+  static const String kTestRewardedIOS          = 'ca-app-pub-3940256099942544/1712485313';
+
+  // ── PRODUCTION IDs (Replace before release) ──────────────────────
+  // App ID (required in AndroidManifest.xml and Info.plist)
+  static const String kProdAppIdAndroid        = 'ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX';
+  static const String kProdAppIdIOS            = 'ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX';
+
+  // Interstitial — shown on game over
+  static const String kProdInterstitialAndroid  = 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
+  static const String kProdInterstitialIOS      = 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
+
+  // Rewarded — hint system
+  static const String kProdRewardedAndroid      = 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
+  static const String kProdRewardedIOS          = 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
+
+  // ── Active IDs (switch via build flavor or env flag) ─────────────
+  static String get interstitialId {
+    if (kDebugMode) {
+      return Platform.isIOS ? kTestInterstitialIOS : kTestInterstitialAndroid;
+    }
+    return Platform.isIOS ? kProdInterstitialIOS : kProdInterstitialAndroid;
+  }
+
+  static String get rewardedId {
+    if (kDebugMode) {
+      return Platform.isIOS ? kTestRewardedIOS : kTestRewardedAndroid;
+    }
+    return Platform.isIOS ? kProdRewardedIOS : kProdRewardedAndroid;
+  }
+}
+```
+
+**AndroidManifest.xml addition:**
+```xml
+<meta-data
+  android:name="com.google.android.gms.ads.APPLICATION_ID"
+  android:value="ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX"/>
+```
+
+**Info.plist addition:**
+```xml
+<key>GADApplicationIdentifier</key>
+<string>ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX</string>
+```
+
+---
+
+### Appendix D: Hive Box Schema Reference
+
+```dart
+// lib/core/constants/hive_constants.dart
+
+class HiveBoxNames {
+  static const String gameSessionClassic = 'game_session_classic';
+  static const String gameSessionDaily   = 'game_session_daily';
+  static const String gameSessionZen     = 'game_session_zen';
+  static const String settings           = 'settings';
+  static const String themeState         = 'theme_state';
+  static const String dailyChallenges    = 'daily_challenges';   // key = date string
+  static const String lifetimeStats      = 'lifetime_stats';
+}
+
+class HiveTypeIds {
+  static const int gameSession    = 0;
+  static const int piece          = 1;
+  static const int appSettings    = 2;
+  static const int themeState     = 3;
+  static const int dailyChallenge = 4;
+  static const int lifetimeStats  = 5;
+}
+
+// Registration in main.dart:
+Future<void> _initHive() async {
+  await Hive.initFlutter();
+  Hive.registerAdapter(GameSessionHiveAdapter());
+  Hive.registerAdapter(PieceHiveAdapter());
+  Hive.registerAdapter(AppSettingsHiveAdapter());
+  Hive.registerAdapter(ThemeStateHiveAdapter());
+  Hive.registerAdapter(DailyChallengeHiveAdapter());
+  Hive.registerAdapter(LifetimeStatsHiveAdapter());
+
+  await Future.wait([
+    Hive.openBox<GameSessionHive>(HiveBoxNames.gameSessionClassic),
+    Hive.openBox<GameSessionHive>(HiveBoxNames.gameSessionDaily),
+    Hive.openBox<GameSessionHive>(HiveBoxNames.gameSessionZen),
+    Hive.openBox<AppSettingsHive>(HiveBoxNames.settings),
+    Hive.openBox<ThemeStateHive>(HiveBoxNames.themeState),
+    Hive.openBox<DailyChallengeHive>(HiveBoxNames.dailyChallenges),
+    Hive.openBox<LifetimeStatsHive>(HiveBoxNames.lifetimeStats),
+  ]);
+}
+```
+
+---
+
+### Appendix E: Animation Duration Reference Table
+
+| Animation | Duration | Delay | Curve | Repeat |
+|-----------|---------|-------|-------|--------|
+| ANI-01 Piece Pickup | 120ms | 0ms | easeOut | No |
+| ANI-02 Invalid Drop Shake | 200ms total (3 oscillations) | 0ms | linear | No |
+| ANI-03 Valid Placement (per block) | 150ms (100 + 30 + 30) | +30ms per block index | easeOut → easeIn | No |
+| ANI-04 Line Clear (per cell) | 80ms per cell (9 cells = 300ms total) | +80ms per column index | linear | No |
+| ANI-05 Score Pop | 600ms | 0ms | easeOut | No |
+| ANI-06 Combo Banner | 800ms (slide 300ms + hold 200ms + fade 300ms) | 0ms | easeOut / linear | No |
+| ANI-07 Color Bonus Particles | 500ms | 0ms | easeOut | No |
+| ANI-08 Game Over Modal Slide | 400ms | 0ms | easeOut | No |
+| ANI-08 Backdrop Blur | 400ms | 0ms | easeOut | No |
+| ANI-09 High Score Shimmer | 1200ms per sweep | 0ms | linear | ×3 |
+| ANI-10 Button Press Down | 80ms | 0ms | easeOut | No |
+| ANI-10 Button Press Release | 80ms | 0ms | easeIn | No |
+| ANI-11 Daily Timer Pulse | 300ms (150ms out + 150ms in) | 0ms | easeInOut | Loop |
+| ANI-12 Theme Unlock Confetti | 1000ms | 0ms | physics | No |
+| ANI-13 Splash Logo | 600ms | 0ms | easeOut | No |
+| ANI-14 Splash Tagline | 400ms | 800ms | easeIn | No |
+| ANI-17 Score Count-Up | 1200ms | 200ms (after modal appears) | easeOut | No |
+| ANI-19 Screen Transition | 300ms | 0ms | easeInOut | No |
+
+---
+
+*End of Software Requirements Specification — ColorZen: Block Puzzle v1.0.0*
+
+*Document prepared by AppWareTech. This document constitutes the complete specification for v1.0 development. Changes to this document require version increment and changelog entry.*
