@@ -6,6 +6,7 @@ import 'package:colorzen_block_puzzle/core/theme/app_theme.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/settings/settings_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/theme/theme_cubit.dart';
+import 'package:colorzen_block_puzzle/presentation/widgets/ads/banner_ad_bar.dart';
 import 'package:colorzen_block_puzzle/services/ad_service.dart';
 import 'package:colorzen_block_puzzle/services/audio_service.dart';
 import 'package:colorzen_block_puzzle/services/haptic_service.dart';
@@ -23,6 +24,7 @@ class SettingsScreen extends StatelessWidget {
         palette: palette,
         dimmed: true,
         child: SafeArea(
+          bottom: false,
           child: Column(
             children: [
               AppBar(
@@ -157,6 +159,7 @@ class SettingsScreen extends StatelessWidget {
                   ],
                 ),
               ),
+              BannerAdBar(adsRemoved: settings.adsRemoved),
             ],
           ),
         ),

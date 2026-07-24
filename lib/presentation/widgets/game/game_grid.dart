@@ -34,7 +34,7 @@ class GhostState {
 
 /// Shared board metrics — keep in sync with DragMath / GameGrid padding.
 class BoardMetrics {
-  static const gridPadding = 1.0;
+  static const gridPadding = 7.0;
   static const cellGap = 1.0;
   static const borderWidth = 1.0;
   /// Sub-pixel safety so 9 cells + gaps never exceed constraints.

@@ -438,6 +438,7 @@ class _GameViewState extends State<_GameView> {
           padding: EdgeInsets.symmetric(horizontal: pad),
           child: Column(
             children: [
+              const SizedBox(height: 8),
               SizedBox(
                 height: headerH,
                 child: Row(
@@ -489,6 +490,7 @@ class _GameViewState extends State<_GameView> {
                   ],
                 ),
               ),
+              const SizedBox(height: 6),
               ScoreDisplay(
                 score: session.score,
                 bestScore: session.bestScore,
