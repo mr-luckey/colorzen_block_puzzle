@@ -1,6 +1,13 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 
+int _asInt(dynamic value, [int fallback = 0]) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value) ?? fallback;
+  return fallback;
+}
+
 enum BlockColor {
   color0,
   color1,
@@ -240,15 +247,15 @@ class GameSession extends Equatable {
             (p) => Piece.fromMap(Map<dynamic, dynamic>.from(p as Map)),
           )
           .toList(),
-      score: map['score'] as int,
-      bestScore: map['bestScore'] as int,
-      linesCleared: map['linesCleared'] as int,
-      blocksPlaced: map['blocksPlaced'] as int,
-      comboCount: map['comboCount'] as int,
-      isGameOver: map['isGameOver'] as bool,
-      consecutiveClearMoves: map['consecutiveClearMoves'] as int? ?? 0,
-      movesMade: map['movesMade'] as int? ?? 0,
-      activeSurviveMs: map['activeSurviveMs'] as int? ?? 0,
+      score: _asInt(map['score']),
+      bestScore: _asInt(map['bestScore']),
+      linesCleared: _asInt(map['linesCleared']),
+      blocksPlaced: _asInt(map['blocksPlaced']),
+      comboCount: _asInt(map['comboCount']),
+      isGameOver: map['isGameOver'] as bool? ?? false,
+      consecutiveClearMoves: _asInt(map['consecutiveClearMoves']),
+      movesMade: _asInt(map['movesMade']),
+      activeSurviveMs: _asInt(map['activeSurviveMs']),
       lastMoveEpochMs: null,
       timeBomb: bombRaw is Map
           ? TimeBomb.fromMap(Map<dynamic, dynamic>.from(bombRaw))
@@ -340,7 +347,7 @@ class AppSettings extends Equatable {
   const AppSettings({
     this.sfxEnabled = true,
     this.musicEnabled = true,
-    this.musicVolume = 0.85,
+    this.musicVolume = 0.72,
     this.hapticEnabled = true,
     this.notificationsEnabled = false,
     this.adsRemoved = false,
@@ -384,7 +391,7 @@ class AppSettings extends Equatable {
   factory AppSettings.fromMap(Map<dynamic, dynamic> map) => AppSettings(
         sfxEnabled: map['sfxEnabled'] as bool? ?? true,
         musicEnabled: map['musicEnabled'] as bool? ?? true,
-        musicVolume: (map['musicVolume'] as num?)?.toDouble() ?? 0.85,
+        musicVolume: (map['musicVolume'] as num?)?.toDouble() ?? 0.72,
         hapticEnabled: map['hapticEnabled'] as bool? ?? true,
         notificationsEnabled:
             map['notificationsEnabled'] as bool? ?? false,

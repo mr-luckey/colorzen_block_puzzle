@@ -41,6 +41,8 @@ Future<void> configureDependencies() async {
   sl.registerSingleton<AudioService>(audio);
   settingsCubit.bindOnChanged(audio.syncFromSettings);
   MusicBootstrapHooks.ensureMusic = audio.ensureMusicPlaying;
+  MusicBootstrapHooks.onPaused = audio.onAppPaused;
+  MusicBootstrapHooks.onResumed = audio.onAppResumed;
   // Don't rely on this alone — Android may block until UI/gesture.
   await audio.syncFromSettings(settingsCubit.state);
 

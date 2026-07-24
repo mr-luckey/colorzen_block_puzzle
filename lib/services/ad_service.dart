@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:colorzen_block_puzzle/core/constants/admob_constants.dart';
 import 'package:colorzen_block_puzzle/core/constants/app_constants.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -11,6 +13,13 @@ abstract class AdService {
   });
   Future<void> loadRewarded();
   Future<bool> showRewarded({required void Function() onEarned});
+
+  /// Menu-only loop: interstitial every 20s while user is outside gameplay.
+  /// Does not change existing game interstitial cooldown behavior.
+  void setMenuAdsActive({required bool active, required bool adsRemoved});
+
+  /// Hard lock: while true, menu interstitial never shows (even if Home rebuilds).
+  void setInGameplay(bool inGameplay);
 }
 
 class AdMobService implements AdService {
@@ -18,6 +27,13 @@ class AdMobService implements AdService {
   RewardedAd? _rewarded;
   DateTime? _lastInterstitialShown;
   bool _initialized = false;
+
+  Timer? _menuTimer;
+  bool _menuAdsActive = false;
+  bool _adsRemoved = false;
+  bool _showingMenuAd = false;
+  /// Blocks menu interstitials during an active game (Home stays under the route).
+  bool _inGameplay = false;
 
   @override
   Future<void> init() async {
@@ -109,22 +125,105 @@ class AdMobService implements AdService {
     }
     _rewarded = null;
     var earned = false;
+    // ad.show() resolves when the ad is presented, not when it closes.
+    // Wait for dismiss/fail so onUserEarnedReward can set [earned] first.
+    final done = Completer<bool>();
     ad.fullScreenContentCallback = FullScreenContentCallback(
       onAdDismissedFullScreenContent: (ad) {
         ad.dispose();
         loadRewarded();
+        if (!done.isCompleted) done.complete(earned);
       },
       onAdFailedToShowFullScreenContent: (ad, _) {
         ad.dispose();
         loadRewarded();
+        if (!done.isCompleted) done.complete(false);
       },
     );
-    await ad.show(
-      onUserEarnedReward: (_, __) {
-        earned = true;
-        onEarned();
+    try {
+      await ad.show(
+        onUserEarnedReward: (_, __) {
+          earned = true;
+          onEarned();
+        },
+      );
+    } catch (_) {
+      loadRewarded();
+      if (!done.isCompleted) done.complete(false);
+      return false;
+    }
+    return done.future;
+  }
+
+  @override
+  void setMenuAdsActive({required bool active, required bool adsRemoved}) {
+    _adsRemoved = adsRemoved;
+    _menuAdsActive = active && !adsRemoved;
+    _syncMenuTimer();
+  }
+
+  @override
+  void setInGameplay(bool inGameplay) {
+    _inGameplay = inGameplay;
+    if (inGameplay) {
+      _menuTimer?.cancel();
+      _menuTimer = null;
+      return;
+    }
+    _syncMenuTimer();
+  }
+
+  void _syncMenuTimer() {
+    final shouldRun = _menuAdsActive && !_adsRemoved && !_inGameplay;
+    if (!shouldRun) {
+      _menuTimer?.cancel();
+      _menuTimer = null;
+      return;
+    }
+    if (_menuTimer != null) return;
+    _menuTimer = Timer.periodic(
+      const Duration(seconds: AppConstants.menuInterstitialEverySec),
+      (_) => _tickMenuInterstitial(),
+    );
+  }
+
+  Future<void> _tickMenuInterstitial() async {
+    if (!_menuAdsActive || _adsRemoved || _showingMenuAd || _inGameplay) {
+      return;
+    }
+    final ad = _interstitial;
+    if (ad == null) {
+      await loadInterstitial();
+      return;
+    }
+    // Re-check after any await / race with GameScreen open.
+    if (!_menuAdsActive || _adsRemoved || _inGameplay) return;
+    _showingMenuAd = true;
+    _interstitial = null;
+    // Menu loop uses its own cadence — do not touch game cooldown stamp.
+    ad.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        _showingMenuAd = false;
+        loadInterstitial();
+      },
+      onAdFailedToShowFullScreenContent: (ad, _) {
+        ad.dispose();
+        _showingMenuAd = false;
+        loadInterstitial();
       },
     );
-    return earned;
+    try {
+      if (_inGameplay || !_menuAdsActive || _adsRemoved) {
+        _showingMenuAd = false;
+        _interstitial ??= ad;
+        return;
+      }
+      await ad.show();
+      loadInterstitial();
+    } catch (_) {
+      _showingMenuAd = false;
+      await loadInterstitial();
+    }
   }
 }

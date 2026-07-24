@@ -17,6 +17,7 @@ import 'package:colorzen_block_puzzle/presentation/screens/game_screen.dart';
 import 'package:colorzen_block_puzzle/presentation/screens/settings_screen.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/ads/banner_ad_bar.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/app_button.dart';
+import 'package:colorzen_block_puzzle/services/ad_service.dart';
 import 'package:colorzen_block_puzzle/services/audio_service.dart';
 import 'package:colorzen_block_puzzle/services/haptic_service.dart';
 
@@ -30,6 +31,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final PageController _pageController;
   int _page = 0;
+  bool _dailyLoading = false;
 
   static const _modes = [GameMode.classic, GameMode.daily, GameMode.zen];
 
@@ -37,6 +39,13 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _pageController = PageController(viewportFraction: 1);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final removed = context.read<SettingsCubit>().state.adsRemoved;
+      sl<AdService>().setMenuAdsActive(active: true, adsRemoved: removed);
+      // ignore: discarded_futures
+      sl<AudioService>().ensureMusicPlaying();
+    });
   }
 
   @override
@@ -59,8 +68,30 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     )
         .then((_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {});
+      // Game / interstitial can leave BGM paused — kick it on home again.
+      // ignore: discarded_futures
+      sl<AudioService>().ensureMusicPlaying();
     });
+  }
+
+  Future<void> _startDailyWithReward() async {
+    if (_dailyLoading) return;
+    setState(() => _dailyLoading = true);
+    final ok = await sl<AdService>().showRewarded(onEarned: () {});
+    if (!mounted) return;
+    setState(() => _dailyLoading = false);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Watch a short ad to start Daily Challenge.'),
+        ),
+      );
+      return;
+    }
+    // Resume saved daily progress (board / score) if present.
+    _openGame(GameMode.daily);
   }
 
   void _openSettings() {
@@ -100,6 +131,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final palette = AppPalettes.of(themeState.selected);
     final daily = context.watch<DailyChallengeCubit>().state;
     final adsRemoved = context.watch<SettingsCubit>().state.adsRemoved;
+
+    // Sync remove-ads without restarting an already-running menu timer.
+    final ads = sl<AdService>();
+    ads.setMenuAdsActive(active: true, adsRemoved: adsRemoved);
+
     final size = MediaQuery.sizeOf(context);
     final pad = (size.width * 0.05).clamp(14.0, 24.0);
     final cardSide = (math.min(size.width * 0.78, size.height * 0.42))
@@ -126,12 +162,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             mode: _currentMode,
                             palette: palette,
                             daily: daily,
+                            dailyLoading: _dailyLoading,
                             savedClassic: _savedClassic(),
                             onContinueClassic: () =>
                                 _openGame(GameMode.classic),
                             onNewClassic: () =>
                                 _openGame(GameMode.classic, forceNew: true),
-                            onStartDaily: () => _openGame(GameMode.daily),
+                            onStartDaily: _startDailyWithReward,
                             onPlayZen: () => _openGame(GameMode.zen),
                           )
                               .animate(key: ValueKey(_currentMode))
@@ -142,22 +179,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           SizedBox(height: size.height < 700 ? 4 : 10),
-                          ShaderMask(
-                            blendMode: BlendMode.srcIn,
-                            shaderCallback: (bounds) => LinearGradient(
-                              colors: [
-                                palette.accentPrimary,
-                                palette.accentSecondary,
-                                palette.accentPrimary,
-                              ],
-                            ).createShader(bounds),
-                            child: Text(
-                              AppConstants.appName.toUpperCase(),
-                              style: AppTextStyles.logo(Colors.white).copyWith(
-                                fontSize: size.width < 360 ? 30 : 36,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
+                          Image.asset(
+                            AppConstants.appLogoAsset,
+                            width: size.width < 360 ? 96 : 112,
+                            height: size.width < 360 ? 96 : 112,
+                            filterQuality: FilterQuality.high,
                           )
                               .animate()
                               .fadeIn(duration: 450.ms)
@@ -195,30 +221,37 @@ class _HomeScreenState extends State<HomeScreen> {
                                       side: heroHeight,
                                       daily: daily,
                                       selected: active,
-                                      onTap: () => _openGame(mode),
+                                      onTap: () {
+                                        if (mode == GameMode.daily) {
+                                          _startDailyWithReward();
+                                        } else {
+                                          _openGame(mode);
+                                        }
+                                      },
                                     ),
                                   ),
                                 );
                               },
                             ),
-                            Positioned(
-                              left: 0,
-                              child: _IosChevron(
-                                direction: AxisDirection.left,
-                                enabled: _page > 0,
-                                palette: palette,
-                                onTap: () => _goTo(_page - 1),
+                            // No left arrow on the first card.
+                            if (_page > 0)
+                              Positioned(
+                                left: 0,
+                                child: _IosChevron(
+                                  direction: AxisDirection.left,
+                                  palette: palette,
+                                  onTap: () => _goTo(_page - 1),
+                                ),
                               ),
-                            ),
-                            Positioned(
-                              right: 0,
-                              child: _IosChevron(
-                                direction: AxisDirection.right,
-                                enabled: _page < _modes.length - 1,
-                                palette: palette,
-                                onTap: () => _goTo(_page + 1),
+                            if (_page < _modes.length - 1)
+                              Positioned(
+                                right: 0,
+                                child: _IosChevron(
+                                  direction: AxisDirection.right,
+                                  palette: palette,
+                                  onTap: () => _goTo(_page + 1),
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       );
@@ -285,6 +318,7 @@ class _ModeActions extends StatelessWidget {
     required this.mode,
     required this.palette,
     required this.daily,
+    required this.dailyLoading,
     required this.savedClassic,
     required this.onContinueClassic,
     required this.onNewClassic,
@@ -295,6 +329,7 @@ class _ModeActions extends StatelessWidget {
   final GameMode mode;
   final ColorPalette palette;
   final DailyChallengeState daily;
+  final bool dailyLoading;
   final Future<GameSession?> savedClassic;
   final VoidCallback onContinueClassic;
   final VoidCallback onNewClassic;
@@ -330,12 +365,14 @@ class _ModeActions extends StatelessWidget {
           },
         ),
       GameMode.daily => AppButton(
-          label: 'START NOW',
+          label: dailyLoading ? 'LOADING…' : 'START NOW',
           subtitle: daily.completed
               ? 'Done · Score ${daily.score}'
-              : daily.countdown,
-          leading: const Icon(Icons.bolt_rounded),
-          onTap: onStartDaily,
+              : 'Watch ad · ${daily.countdown}',
+          leading: Icon(
+            dailyLoading ? Icons.hourglass_top_rounded : Icons.ondemand_video,
+          ),
+          onTap: dailyLoading ? null : onStartDaily,
         ),
       GameMode.zen => AppButton(
           label: 'PLAY',
@@ -388,54 +425,48 @@ class _PageDots extends StatelessWidget {
   }
 }
 
-/// Soft iOS-style chevron control.
 class _IosChevron extends StatelessWidget {
   const _IosChevron({
     required this.direction,
-    required this.enabled,
     required this.palette,
     required this.onTap,
   });
 
   final AxisDirection direction;
-  final bool enabled;
   final ColorPalette palette;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final isLeft = direction == AxisDirection.left;
-    return Opacity(
-      opacity: enabled ? 1 : 0.28,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: enabled ? onTap : null,
-          borderRadius: BorderRadius.circular(22),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: palette.surface.withValues(alpha: 0.72),
-              border: Border.all(
-                color: palette.accentPrimary.withValues(alpha: 0.45),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.28),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: palette.surface.withValues(alpha: 0.72),
+            border: Border.all(
+              color: palette.accentPrimary.withValues(alpha: 0.45),
             ),
-            child: Transform.flip(
-              flipX: isLeft,
-              child: Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: 16,
-                color: palette.textPrimary,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
+            ],
+          ),
+          child: Transform.flip(
+            flipX: isLeft,
+            child: Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 16,
+              color: palette.textPrimary,
             ),
           ),
         ),
@@ -461,6 +492,12 @@ class _ModeHeroCard extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  static String assetFor(GameMode mode) => switch (mode) {
+        GameMode.classic => 'assets/images/mode_classic_3d.png',
+        GameMode.daily => 'assets/images/mode_daily_3d.png',
+        GameMode.zen => 'assets/images/mode_zen_3d.png',
+      };
+
   _ModeVisual get _visual {
     final blocks = palette.blocks;
     return switch (mode) {
@@ -474,7 +511,7 @@ class _ModeHeroCard extends StatelessWidget {
           title: 'DAILY',
           subtitle: daily.completed
               ? 'Done · Score ${daily.score}'
-              : 'Shared puzzle · 1.5×',
+              : 'Watch ad · Shared puzzle',
           accent: Color.lerp(blocks[2], palette.accentPrimary, 0.35)!,
           glow: Color.lerp(blocks[4 % blocks.length], Colors.white, 0.25)!,
         ),
@@ -505,7 +542,7 @@ class _ModeHeroCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(radius),
             boxShadow: [
               BoxShadow(
-                color: v.glow.withValues(alpha: selected ? 0.45 : 0.2),
+                color: v.glow.withValues(alpha: selected ? 0.5 : 0.22),
                 blurRadius: selected ? 28 : 14,
                 offset: const Offset(0, 10),
               ),
@@ -520,52 +557,75 @@ class _ModeHeroCard extends StatelessWidget {
             palette: palette,
             radius: radius,
             borderColor: v.accent.withValues(alpha: 0.7),
-            padding: EdgeInsets.all(side * 0.06),
+            padding: EdgeInsets.all(side * 0.045),
             child: Column(
               children: [
                 Expanded(
-                  flex: 5,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(radius * 0.7),
-                      gradient: RadialGradient(
-                        center: const Alignment(-0.2, -0.35),
-                        radius: 1.05,
-                        colors: [
-                          Color.lerp(v.glow, Colors.white, 0.2)!
-                              .withValues(alpha: 0.35),
-                          palette.gridBackground.withValues(alpha: 0.55),
-                          palette.background.withValues(alpha: 0.85),
-                        ],
-                      ),
-                    ),
-                    child: CustomPaint(
-                      painter: _ModeScenePainter(
-                        mode: mode,
-                        palette: palette,
-                        accent: v.accent,
-                        glow: v.glow,
-                      ),
-                      child: const SizedBox.expand(),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(radius * 0.7),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ColoredBox(
+                          color: Color.lerp(
+                            palette.gridBackground,
+                            v.glow,
+                            0.12,
+                          )!,
+                        ),
+                        // Square art (1024²) — contain so trophy/blocks aren't cropped.
+                        Padding(
+                          padding: EdgeInsets.all(side * 0.02),
+                          child: Image.asset(
+                            assetFor(mode),
+                            fit: BoxFit.contain,
+                            alignment: Alignment.center,
+                            filterQuality: FilterQuality.high,
+                            errorBuilder: (_, error, stack) => Center(
+                              child: Icon(
+                                Icons.image_rounded,
+                                size: side * 0.28,
+                                color: v.accent,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Theme tint wash so art matches active palette.
+                        IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  v.glow.withValues(alpha: 0.14),
+                                  Colors.transparent,
+                                  palette.background.withValues(alpha: 0.22),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                SizedBox(height: side * 0.04),
+                SizedBox(height: side * 0.028),
                 Text(
                   v.title,
                   style: AppTextStyles.section(palette.textPrimary).copyWith(
-                    fontSize: (side * 0.065).clamp(15.0, 20.0),
+                    fontSize: (side * 0.06).clamp(14.0, 18.0),
                     letterSpacing: 1.2,
                   ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: side * 0.01),
                 Text(
                   v.subtitle,
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.mini(palette.textSecondary).copyWith(
-                    fontSize: (side * 0.04).clamp(10.0, 12.0),
+                    fontSize: (side * 0.038).clamp(10.0, 12.0),
                   ),
                 ),
               ],
@@ -589,222 +649,4 @@ class _ModeVisual {
   final String subtitle;
   final Color accent;
   final Color glow;
-}
-
-/// Theme-tinted isometric 3D scene per game mode.
-class _ModeScenePainter extends CustomPainter {
-  _ModeScenePainter({
-    required this.mode,
-    required this.palette,
-    required this.accent,
-    required this.glow,
-  });
-
-  final GameMode mode;
-  final ColorPalette palette;
-  final Color accent;
-  final Color glow;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width * 0.5;
-    final cy = size.height * 0.55;
-    final unit = math.min(size.width, size.height) * 0.11;
-
-    // Soft floor ellipse
-    final floor = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          accent.withValues(alpha: 0.28),
-          Colors.transparent,
-        ],
-      ).createShader(
-        Rect.fromCenter(
-          center: Offset(cx, cy + unit * 1.6),
-          width: unit * 7,
-          height: unit * 2.4,
-        ),
-      );
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(cx, cy + unit * 1.6),
-        width: unit * 6.2,
-        height: unit * 2.1,
-      ),
-      floor,
-    );
-
-    switch (mode) {
-      case GameMode.classic:
-        _paintClassic(canvas, cx, cy, unit);
-      case GameMode.daily:
-        _paintDaily(canvas, cx, cy, unit);
-      case GameMode.zen:
-        _paintZen(canvas, cx, cy, unit);
-    }
-  }
-
-  void _paintClassic(Canvas canvas, double cx, double cy, double u) {
-    final colors = palette.blocks;
-    // Trophy-like stack of 3D cubes
-    final positions = <(double, double, Color)>[
-      (-1.1, 0.6, colors[0]),
-      (0.0, 0.6, colors[1]),
-      (1.1, 0.6, colors[2]),
-      (-0.55, -0.15, colors[3]),
-      (0.55, -0.15, colors[4 % colors.length]),
-      (0.0, -0.9, accent),
-    ];
-    for (final (dx, dy, c) in positions) {
-      _drawIsoCube(
-        canvas,
-        Offset(cx + dx * u * 1.35, cy + dy * u * 1.35),
-        u * 0.95,
-        c,
-      );
-    }
-    // Crown gem
-    _drawGem(canvas, Offset(cx, cy - u * 2.05), u * 0.55, glow);
-  }
-
-  void _paintDaily(Canvas canvas, double cx, double cy, double u) {
-    // Calendar base
-    _drawIsoCube(canvas, Offset(cx, cy + u * 0.15), u * 2.1, palette.surface);
-    _drawIsoCube(
-      canvas,
-      Offset(cx, cy - u * 0.55),
-      u * 2.1,
-      Color.lerp(accent, Colors.white, 0.15)!,
-    );
-    // Date tiles
-    final tileColors = [
-      palette.blocks[0],
-      palette.blocks[2],
-      glow,
-      accent,
-    ];
-    var i = 0;
-    for (var row = 0; row < 2; row++) {
-      for (var col = 0; col < 2; col++) {
-        _drawIsoCube(
-          canvas,
-          Offset(
-            cx + (col - 0.5) * u * 1.05,
-            cy - u * 0.35 + row * u * 0.85,
-          ),
-          u * 0.72,
-          tileColors[i++],
-        );
-      }
-    }
-    // Star badge
-    _drawGem(canvas, Offset(cx + u * 1.55, cy - u * 1.55), u * 0.42, glow);
-  }
-
-  void _paintZen(Canvas canvas, double cx, double cy, double u) {
-    // Soft lotus / stacked pebbles
-    final greens = [
-      Color.lerp(accent, Colors.black, 0.15)!,
-      accent,
-      Color.lerp(accent, Colors.white, 0.2)!,
-      glow,
-    ];
-    _drawIsoCube(canvas, Offset(cx - u * 0.9, cy + u * 0.5), u * 1.1, greens[0]);
-    _drawIsoCube(canvas, Offset(cx + u * 0.9, cy + u * 0.5), u * 1.1, greens[1]);
-    _drawIsoCube(canvas, Offset(cx, cy - u * 0.15), u * 1.25, greens[2]);
-    _drawIsoCube(canvas, Offset(cx, cy - u * 1.15), u * 0.95, greens[3]);
-    // Leaf ring
-    final ring = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = u * 0.12
-      ..color = glow.withValues(alpha: 0.7);
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(cx, cy + u * 1.35),
-        width: u * 4.2,
-        height: u * 1.2,
-      ),
-      ring,
-    );
-  }
-
-  void _drawIsoCube(Canvas canvas, Offset center, double size, Color base) {
-    final w = size * 0.55;
-    final h = size * 0.32;
-    final d = size * 0.55;
-
-    final top = Path()
-      ..moveTo(center.dx, center.dy - h)
-      ..lineTo(center.dx + w, center.dy - h * 0.35)
-      ..lineTo(center.dx, center.dy + h * 0.3)
-      ..lineTo(center.dx - w, center.dy - h * 0.35)
-      ..close();
-
-    final left = Path()
-      ..moveTo(center.dx - w, center.dy - h * 0.35)
-      ..lineTo(center.dx, center.dy + h * 0.3)
-      ..lineTo(center.dx, center.dy + h * 0.3 + d)
-      ..lineTo(center.dx - w, center.dy - h * 0.35 + d)
-      ..close();
-
-    final right = Path()
-      ..moveTo(center.dx + w, center.dy - h * 0.35)
-      ..lineTo(center.dx, center.dy + h * 0.3)
-      ..lineTo(center.dx, center.dy + h * 0.3 + d)
-      ..lineTo(center.dx + w, center.dy - h * 0.35 + d)
-      ..close();
-
-    final topC = Color.lerp(base, Colors.white, 0.28)!;
-    final leftC = Color.lerp(base, Colors.black, 0.22)!;
-    final rightC = Color.lerp(base, Colors.black, 0.08)!;
-
-    canvas.drawPath(left, Paint()..color = leftC);
-    canvas.drawPath(right, Paint()..color = rightC);
-    canvas.drawPath(top, Paint()..color = topC);
-
-    // Specular edge
-    canvas.drawPath(
-      top,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2
-        ..color = Colors.white.withValues(alpha: 0.35),
-    );
-  }
-
-  void _drawGem(Canvas canvas, Offset c, double r, Color color) {
-    final path = Path()
-      ..moveTo(c.dx, c.dy - r)
-      ..lineTo(c.dx + r * 0.7, c.dy)
-      ..lineTo(c.dx, c.dy + r)
-      ..lineTo(c.dx - r * 0.7, c.dy)
-      ..close();
-    canvas.drawPath(
-      path,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color.lerp(color, Colors.white, 0.45)!,
-            color,
-            Color.lerp(color, Colors.black, 0.2)!,
-          ],
-        ).createShader(Rect.fromCircle(center: c, radius: r)),
-    );
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.4
-        ..color = Colors.white.withValues(alpha: 0.5),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _ModeScenePainter oldDelegate) =>
-      oldDelegate.mode != mode ||
-      oldDelegate.palette != palette ||
-      oldDelegate.accent != accent ||
-      oldDelegate.glow != glow;
 }

@@ -9,9 +9,16 @@ abstract class AudioService {
   Future<void> init();
   Future<void> playSfx(SfxType type);
   Future<void> playMusic();
+  Future<void> pauseMusic();
   Future<void> stopMusic();
   Future<void> setMusicVolume(double volume);
   Future<void> syncFromSettings(AppSettings settings);
+
+  /// Pause BGM + SFX when app goes to background.
+  Future<void> onAppPaused();
+
+  /// Resume BGM when app returns to foreground.
+  Future<void> onAppResumed();
 
   /// Call after first frame / tap / resume so Android allows playback.
   Future<void> ensureMusicPlaying();
@@ -28,8 +35,13 @@ class AudioPlayersService implements AudioService {
   bool _ready = false;
   bool _starting = false;
   bool _wantMusic = false;
+  bool _appInForeground = true;
+  bool _intentionallyPaused = false;
 
   static const _bgm = 'audio/bgm_colorzen.wav';
+
+  /// Keep BGM softer than the slider so it stays chill behind SFX.
+  static const _musicSoftFactor = 0.55;
 
   static const _files = {
     SfxType.tap: 'audio/tap.wav',
@@ -42,36 +54,59 @@ class AudioPlayersService implements AudioService {
     SfxType.tick: 'audio/tick.wav',
   };
 
+  /// Mix BGM + SFX; never steal exclusive focus (that kills the loop on Android).
+  static final AudioContext _mixCtx = AudioContextConfig(
+    route: AudioContextConfigRoute.system,
+    focus: AudioContextConfigFocus.mixWithOthers,
+  ).build();
+
   double get _musicGain =>
-      settingsProvider().musicVolume.clamp(0.0, 1.0);
+      (settingsProvider().musicVolume.clamp(0.0, 1.0) * _musicSoftFactor)
+          .clamp(0.0, 1.0);
+
+  bool get _musicAllowed =>
+      _ready &&
+      _appInForeground &&
+      settingsProvider().musicEnabled &&
+      _wantMusic;
 
   @override
   Future<void> init() async {
     try {
-      await AudioPlayer.global.setAudioContext(
-        AudioContextConfig(
-          route: AudioContextConfigRoute.system,
-          focus: AudioContextConfigFocus.gain,
-        ).build(),
-      );
+      await AudioPlayer.global.setAudioContext(_mixCtx);
 
       for (var i = 0; i < 3; i++) {
         final p = AudioPlayer();
+        await p.setAudioContext(_mixCtx);
         await p.setPlayerMode(PlayerMode.lowLatency);
         _sfxPool.add(p);
       }
 
+      await _music.setAudioContext(_mixCtx);
       await _music.setPlayerMode(PlayerMode.mediaPlayer);
       await _music.setReleaseMode(ReleaseMode.loop);
       await _music.setVolume(_musicGain);
 
+      _music.onPlayerComplete.listen((_) {
+        if (!_musicAllowed) return;
+        // ignore: discarded_futures
+        Future<void>.delayed(const Duration(milliseconds: 40), playMusic);
+      });
+
+      // If Android pauses/stops BGM (focus / ad / route change), bring it back.
       _music.onPlayerStateChanged.listen((state) {
-        if (!_wantMusic || !_ready) return;
-        if (!settingsProvider().musicEnabled) return;
-        if (state == PlayerState.completed) {
+        if (state == PlayerState.playing) return;
+        if (!_musicAllowed || _intentionallyPaused || _starting) return;
+        // ignore: discarded_futures
+        Future<void>.delayed(const Duration(milliseconds: 120), () {
+          if (!_musicAllowed ||
+              _intentionallyPaused ||
+              _music.state == PlayerState.playing) {
+            return;
+          }
           // ignore: discarded_futures
-          Future<void>.delayed(const Duration(milliseconds: 80), playMusic);
-        }
+          playMusic();
+        });
       });
 
       _ready = true;
@@ -82,13 +117,15 @@ class AudioPlayersService implements AudioService {
 
   @override
   Future<void> playSfx(SfxType type) async {
-    if (!_ready || !settingsProvider().sfxEnabled || _sfxPool.isEmpty) return;
+    if (!_ready ||
+        !_appInForeground ||
+        !settingsProvider().sfxEnabled ||
+        _sfxPool.isEmpty) {
+      return;
+    }
     final file = _files[type];
     if (file == null) return;
     try {
-      // First tap also unlocks BGM on Android.
-      // ignore: discarded_futures
-      ensureMusicPlaying();
       final player = _sfxPool[_sfxIndex % _sfxPool.length];
       _sfxIndex++;
       await player.stop();
@@ -96,13 +133,23 @@ class AudioPlayersService implements AudioService {
         AssetSource(file),
         volume: type == SfxType.tick ? 0.55 : 0.95,
       );
+      // Soft nudge if BGM dropped — don't await so SFX stays snappy.
+      if (_wantMusic &&
+          settingsProvider().musicEnabled &&
+          _music.state != PlayerState.playing) {
+        // ignore: discarded_futures
+        ensureMusicPlaying();
+      }
     } catch (_) {}
   }
 
   @override
   Future<void> playMusic() async {
-    if (!_ready || !settingsProvider().musicEnabled) return;
+    if (!_ready || !_appInForeground || !settingsProvider().musicEnabled) {
+      return;
+    }
     _wantMusic = true;
+    _intentionallyPaused = false;
     if (_starting) return;
     if (_music.state == PlayerState.playing) {
       await _music.setVolume(_musicGain);
@@ -110,15 +157,22 @@ class AudioPlayersService implements AudioService {
     }
     _starting = true;
     try {
-      await _music.stop();
+      await _music.setAudioContext(_mixCtx);
       await _music.setReleaseMode(ReleaseMode.loop);
       await _music.setVolume(_musicGain);
+      if (_music.state == PlayerState.paused) {
+        await _music.resume();
+        // Some devices report paused but resume is a no-op after focus loss.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        if (_music.state == PlayerState.playing) return;
+      }
+      await _music.stop();
       await _music.play(AssetSource(_bgm), volume: _musicGain);
     } catch (_) {
-      // Retry once shortly (common right after cold start).
       try {
         await Future<void>.delayed(const Duration(milliseconds: 350));
-        if (!settingsProvider().musicEnabled) return;
+        if (!_appInForeground || !settingsProvider().musicEnabled) return;
+        await _music.setReleaseMode(ReleaseMode.loop);
         await _music.play(AssetSource(_bgm), volume: _musicGain);
       } catch (_) {}
     } finally {
@@ -127,8 +181,23 @@ class AudioPlayersService implements AudioService {
   }
 
   @override
+  Future<void> pauseMusic() async {
+    _intentionallyPaused = true;
+    try {
+      if (_music.state == PlayerState.playing ||
+          _music.state == PlayerState.paused) {
+        await _music.pause();
+      }
+    } catch (_) {}
+  }
+
+  @override
   Future<void> ensureMusicPlaying() async {
-    if (!_ready || !settingsProvider().musicEnabled) return;
+    if (!_ready || !_appInForeground || !settingsProvider().musicEnabled) {
+      return;
+    }
+    _wantMusic = true;
+    _intentionallyPaused = false;
     if (_music.state == PlayerState.playing) return;
     await playMusic();
   }
@@ -136,22 +205,52 @@ class AudioPlayersService implements AudioService {
   @override
   Future<void> stopMusic() async {
     _wantMusic = false;
+    _intentionallyPaused = true;
     try {
       await _music.stop();
     } catch (_) {}
   }
 
   @override
+  Future<void> onAppPaused() async {
+    _appInForeground = false;
+    try {
+      for (final p in _sfxPool) {
+        await p.stop();
+      }
+    } catch (_) {}
+    await pauseMusic();
+  }
+
+  @override
+  Future<void> onAppResumed() async {
+    _appInForeground = true;
+    if (!settingsProvider().musicEnabled) return;
+    _wantMusic = true;
+    _intentionallyPaused = false;
+    // Ads / system UI often need a beat before media can restart.
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    await ensureMusicPlaying();
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    if (_musicAllowed && _music.state != PlayerState.playing) {
+      await playMusic();
+    }
+  }
+
+  @override
   Future<void> setMusicVolume(double volume) async {
     try {
-      await _music.setVolume(volume.clamp(0.0, 1.0));
+      final gain =
+          (volume.clamp(0.0, 1.0) * _musicSoftFactor).clamp(0.0, 1.0);
+      await _music.setVolume(gain);
     } catch (_) {}
   }
 
   @override
   Future<void> syncFromSettings(AppSettings settings) async {
     await setMusicVolume(settings.musicVolume);
-    if (settings.musicEnabled) {
+    if (settings.musicEnabled && _appInForeground) {
+      _wantMusic = true;
       await playMusic();
     } else {
       await stopMusic();
@@ -159,7 +258,7 @@ class AudioPlayersService implements AudioService {
   }
 }
 
-/// Starts / resumes BGM after UI is up and when app returns to foreground.
+/// Starts / resumes BGM after UI is up; pauses all audio in background.
 class MusicBootstrap extends StatefulWidget {
   const MusicBootstrap({super.key, required this.child});
 
@@ -191,14 +290,23 @@ class _MusicBootstrapState extends State<MusicBootstrap>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _kick();
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // ignore: discarded_futures
+        MusicBootstrapHooks.onResumed?.call();
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // ignore: discarded_futures
+        MusicBootstrapHooks.onPaused?.call();
+      case AppLifecycleState.inactive:
+        // Transient (system UI / gesture) — keep music until paused/hidden.
+        break;
     }
   }
 
   Future<void> _kick() async {
     try {
-      // Lazy import avoidance: resolve via GetIt at call site in main.
       await MusicBootstrapHooks.ensureMusic?.call();
     } catch (_) {}
   }
@@ -210,4 +318,6 @@ class _MusicBootstrapState extends State<MusicBootstrap>
 /// Wired from DI so MusicBootstrap doesn't import GetIt circularly.
 class MusicBootstrapHooks {
   static Future<void> Function()? ensureMusic;
+  static Future<void> Function()? onPaused;
+  static Future<void> Function()? onResumed;
 }

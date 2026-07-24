@@ -20,7 +20,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future<void>.delayed(1600.ms, () async {
+    Future<void>.delayed(1400.ms, () async {
       await sl<AudioService>().ensureMusicPlaying();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -33,7 +33,6 @@ class _SplashScreenState extends State<SplashScreen> {
           },
         ),
       );
-      // After home is visible, kick BGM again (Android audio focus).
       Future<void>.delayed(300.ms, () {
         sl<AudioService>().ensureMusicPlaying();
       });
@@ -43,86 +42,45 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPalettes.of(context.watch<ThemeCubit>().state.selected);
+    final logoSide =
+        (MediaQuery.sizeOf(context).shortestSide * 0.58).clamp(220.0, 300.0);
+
     return Scaffold(
-      body: WoodBackground(
-        palette: palette,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(5, (i) {
-                  final c = palette.blocks[i % palette.blocks.length];
-                  return Container(
-                    width: 28,
-                    height: 28,
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(6),
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color.lerp(c, Colors.white, 0.35)!,
-                          c,
-                          Color.lerp(c, Colors.black, 0.2)!,
-                        ],
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: c.withValues(alpha: 0.55),
-                          blurRadius: 10,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                  )
-                      .animate(delay: (80 * i).ms)
-                      .fadeIn()
-                      .scale(begin: const Offset(0.4, 0.4));
-                }),
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // No fadeIn — logo must be visible immediately (native → Flutter handoff).
+            Image.asset(
+              AppConstants.appLogoAsset,
+              width: logoSide,
+              height: logoSide,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (_, __, ___) => Icon(
+                Icons.grid_view_rounded,
+                size: logoSide * 0.4,
+                color: palette.accentPrimary,
               ),
-              const SizedBox(height: 28),
-              ShaderMask(
-                blendMode: BlendMode.srcIn,
-                shaderCallback: (bounds) => LinearGradient(
-                  colors: [
-                    palette.accentPrimary,
-                    palette.accentSecondary,
-                  ],
-                ).createShader(bounds),
-                child: Text(
-                  AppConstants.appName.toUpperCase(),
-                  style: AppTextStyles.logo(Colors.white),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              AppConstants.tagline,
+              style: AppTextStyles.tagline(palette.textSecondary),
+            ),
+            const SizedBox(height: 36),
+            SizedBox(
+              width: 160,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  minHeight: 6,
+                  backgroundColor: Colors.white12,
+                  color: palette.accentPrimary,
                 ),
-              )
-                  .animate()
-                  .fadeIn(duration: 500.ms)
-                  .scale(
-                    begin: const Offset(0.85, 0.85),
-                    end: const Offset(1, 1),
-                    curve: Curves.easeOutBack,
-                  ),
-              const SizedBox(height: 10),
-              Text(
-                AppConstants.tagline,
-                style: AppTextStyles.tagline(palette.textSecondary),
-              ).animate(delay: 500.ms).fadeIn(),
-              const SizedBox(height: 36),
-              SizedBox(
-                width: 160,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: LinearProgressIndicator(
-                    minHeight: 6,
-                    backgroundColor: palette.surface,
-                    color: palette.accentPrimary,
-                  ),
-                ),
-              ).animate(delay: 400.ms).fadeIn(),
-            ],
-          ),
+              ),
+            ),
+          ],
         ),
       ),
     );

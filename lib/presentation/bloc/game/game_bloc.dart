@@ -195,6 +195,11 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       }
     }
 
+    // New Game: wipe run progress (score + moves) but keep lifetime best.
+    if (event.forceNew) {
+      await _repo.clearSession(event.mode);
+    }
+
     GameSession? saved;
     if (!event.forceNew) {
       saved = await _repo.loadSession(event.mode);
@@ -202,15 +207,29 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     }
 
     final stats = await _repo.loadStats();
-    final best = switch (event.mode) {
+    final lifetimeBest = switch (event.mode) {
       GameMode.classic => stats.classicBest,
       GameMode.daily => stats.dailyBest,
       GameMode.zen => 0,
     };
 
-    final session = _normalizeBelt(
-      saved?.copyWith(bestScore: best) ?? _createNewSession(event.mode, best),
-    );
+    late final GameSession session;
+    if (saved != null) {
+      // Continue: restore board, pieces, score, moves exactly as left.
+      final best = [
+        lifetimeBest,
+        saved.bestScore,
+        saved.score,
+      ].reduce((a, b) => a > b ? a : b);
+      session = _normalizeBelt(saved.copyWith(bestScore: best));
+      if (event.mode != GameMode.zen && best > lifetimeBest) {
+        await _persistLifetimeBest(event.mode, best);
+      }
+    } else {
+      // Fresh run: score + moves start at 0; best shows all-time high.
+      session = _normalizeBelt(_createNewSession(event.mode, lifetimeBest));
+    }
+
     await _repo.saveSession(session);
     emit(GamePlaying(session));
   }
@@ -582,6 +601,9 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     }
 
     await _repo.saveSession(newSession);
+    if (scoringEnabled && newBest > session.bestScore) {
+      await _persistLifetimeBest(session.mode, newBest);
+    }
     await _maybeUnlockThemes(newSession);
 
     emit(
@@ -741,6 +763,16 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     }
     if (changed) {
       await _onThemeMaybeUnlock(theme.copyWith(unlocked: unlocked));
+    }
+  }
+
+  Future<void> _persistLifetimeBest(GameMode mode, int best) async {
+    if (mode == GameMode.zen || best <= 0) return;
+    final stats = await _repo.loadStats();
+    if (mode == GameMode.classic && best > stats.classicBest) {
+      await _repo.saveStats(stats.copyWith(classicBest: best));
+    } else if (mode == GameMode.daily && best > stats.dailyBest) {
+      await _repo.saveStats(stats.copyWith(dailyBest: best));
     }
   }
 

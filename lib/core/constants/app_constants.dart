@@ -6,6 +6,7 @@ class IapConstants {
 class AppConstants {
   static const String appName = 'ColorZen';
   static const String tagline = 'Place. Clear. Zen.';
+  static const String appLogoAsset = 'assets/images/app_logo.png';
   static const String packageId = 'com.appwaretech.colorzen.puzzle';
   static const int gridSize = 9;
   /// Pieces on the infinite horizontal conveyor belt.
@@ -27,6 +28,8 @@ class AppConstants {
   /// Daily challenge score multiplier (shared seeded puzzle).
   static const double dailyScoreMultiplier = 1.5;
   static const int interstitialCooldownMs = 180000;
+  /// Menu / home interstitial cadence (paused during gameplay).
+  static const int menuInterstitialEverySec = 20;
   static const int desiUnlockScore = 5000;
   static const int arcticUnlockScore = 10000;
   /// Previous free theme (Woodland) — now unlockable.

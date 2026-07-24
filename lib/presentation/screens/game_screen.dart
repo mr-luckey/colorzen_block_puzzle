@@ -76,10 +76,27 @@ class _GameViewState extends State<_GameView> {
   TimeBomb? _trackedBomb;
 
   @override
+  void initState() {
+    super.initState();
+    // Hard-block menu interstitials while the board is active.
+    sl<AdService>().setInGameplay(true);
+    // Keep BGM looping through the whole match.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // ignore: discarded_futures
+      sl<AudioService>().ensureMusicPlaying();
+    });
+  }
+
+  @override
   void dispose() {
     _bombUiTimer?.cancel();
     _fx.dispose();
     _drag.dispose();
+    // Allow menu / home interstitial loop again after leaving the board.
+    sl<AdService>().setInGameplay(false);
+    // Kick BGM for whoever is underneath (home) before route finishes.
+    // ignore: discarded_futures
+    sl<AudioService>().ensureMusicPlaying();
     super.dispose();
   }
 
@@ -564,6 +581,10 @@ class _GameViewState extends State<_GameView> {
       moves: session?.movesMade ?? 0,
     );
     if (leave && context.mounted) {
+      // Persist board / score / moves exactly where the player left.
+      if (session != null && !session.isGameOver) {
+        await sl<GameRepository>().saveSession(session);
+      }
       if ((session?.movesMade ?? 0) >= 5) {
         final removed = context.read<SettingsCubit>().state.adsRemoved;
         await sl<AdService>().showInterstitial(adsRemoved: removed);
