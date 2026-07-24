@@ -92,31 +92,6 @@ class PieceDragController {
   }
 }
 
-class GhostState {
-  const GhostState({
-    required this.mask,
-    required this.color,
-    required this.valid,
-    required this.row,
-    required this.col,
-    this.previewClearRows = const [],
-    this.previewClearCols = const [],
-  });
-
-  final List<List<bool>> mask;
-  final Color? color;
-  final bool valid;
-  final int row;
-  final int col;
-  /// Rows that would clear if this ghost were placed.
-  final List<int> previewClearRows;
-  /// Columns that would clear if this ghost were placed.
-  final List<int> previewClearCols;
-
-  bool get wouldClearLine =>
-      previewClearRows.isNotEmpty || previewClearCols.isNotEmpty;
-}
-
 /// Accurate placement math: floating piece top-left → board cells.
 class DragMath {
   static Size piecePixelSize(Piece piece) {
@@ -247,8 +222,8 @@ class DragMath {
     var previewRows = const <int>[];
     var previewCols = const <int>[];
     if (valid) {
-      final previewGrid = GameEngine.place(board, piece, row, col);
-      final clears = LineClearEngine.detectFullLines(previewGrid);
+      final clears =
+          LineClearEngine.wouldClearAfterPlace(board, piece, row, col);
       previewRows = clears.$1;
       previewCols = clears.$2;
     }

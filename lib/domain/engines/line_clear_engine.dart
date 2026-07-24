@@ -2,6 +2,64 @@ import 'package:colorzen_block_puzzle/core/constants/app_constants.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 
 class LineClearEngine {
+  /// Rows/cols that would clear after placing [piece] — no grid allocation.
+  static (List<int> rows, List<int> cols) wouldClearAfterPlace(
+    List<List<BlockColor?>> board,
+    Piece piece,
+    int row,
+    int col,
+  ) {
+    final n = AppConstants.gridSize;
+    final placed = piece.occupiedCells
+        .map((o) => (row + o.$1, col + o.$2))
+        .toList(growable: false);
+
+    bool occupied(int r, int c) {
+      if (board[r][c] != null) return true;
+      for (final p in placed) {
+        if (p.$1 == r && p.$2 == c) return true;
+      }
+      return false;
+    }
+
+    final rows = <int>[];
+    final cols = <int>[];
+    final touchedRows = <int>{};
+    final touchedCols = <int>{};
+    for (final p in placed) {
+      touchedRows.add(p.$1);
+      touchedCols.add(p.$2);
+    }
+
+    for (final r in touchedRows) {
+      if (r < 0 || r >= n) continue;
+      var full = true;
+      for (var c = 0; c < n; c++) {
+        if (!occupied(r, c)) {
+          full = false;
+          break;
+        }
+      }
+      if (full) rows.add(r);
+    }
+
+    for (final c in touchedCols) {
+      if (c < 0 || c >= n) continue;
+      var full = true;
+      for (var r = 0; r < n; r++) {
+        if (!occupied(r, c)) {
+          full = false;
+          break;
+        }
+      }
+      if (full) cols.add(c);
+    }
+
+    rows.sort();
+    cols.sort();
+    return (rows, cols);
+  }
+
   /// Rows/cols that are fully occupied — no grid mutation (drag preview).
   static (List<int> rows, List<int> cols) detectFullLines(
     List<List<BlockColor?>> grid,

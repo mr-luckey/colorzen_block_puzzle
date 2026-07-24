@@ -609,7 +609,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
 
     // Clear line-flash flags so empty cell backgrounds stay forever.
     final settleMoves = movesMade;
-    await Future<void>.delayed(const Duration(milliseconds: 380));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
     final after = state;
     if (after is GamePlaying &&
         after.session.movesMade == settleMoves &&
@@ -724,6 +724,11 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     final theme = await _loadTheme();
     final unlocked = List<AppThemeId>.from(theme.unlocked);
     var changed = false;
+    if (session.score >= AppConstants.woodlandUnlockScore &&
+        !unlocked.contains(AppThemeId.midnightZen)) {
+      unlocked.add(AppThemeId.midnightZen);
+      changed = true;
+    }
     if (session.score >= AppConstants.desiUnlockScore &&
         !unlocked.contains(AppThemeId.desiRangoli)) {
       unlocked.add(AppThemeId.desiRangoli);

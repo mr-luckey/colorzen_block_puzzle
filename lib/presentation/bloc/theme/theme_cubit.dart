@@ -9,7 +9,10 @@ class ThemeCubit extends Cubit<ThemeStateData> {
   final GameRepository _repo;
 
   Future<void> load() async {
-    emit(await _repo.loadThemeState());
+    final loaded = await _repo.loadThemeState();
+    // Persist migration (Enchanted Night default / Woodland locked).
+    await _repo.saveThemeState(loaded);
+    emit(loaded);
   }
 
   Future<void> selectTheme(AppThemeId id) async {

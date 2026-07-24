@@ -12,7 +12,7 @@ enum BlockColor {
 
 enum GameMode { classic, daily, zen }
 
-enum AppThemeId { midnightZen, desiRangoli, arcticIce }
+enum AppThemeId { midnightZen, desiRangoli, arcticIce, enchantedNight }
 
 class Piece extends Equatable {
   const Piece({
@@ -404,8 +404,8 @@ class AppSettings extends Equatable {
 
 class ThemeStateData extends Equatable {
   const ThemeStateData({
-    this.selected = AppThemeId.midnightZen,
-    this.unlocked = const [AppThemeId.midnightZen],
+    this.selected = AppThemeId.enchantedNight,
+    this.unlocked = const [AppThemeId.enchantedNight],
   });
 
   final AppThemeId selected;
@@ -429,13 +429,36 @@ class ThemeStateData extends Equatable {
       };
 
   factory ThemeStateData.fromMap(Map<dynamic, dynamic> map) {
-    final unlockedRaw = map['unlocked'] as List? ?? [0];
-    return ThemeStateData(
-      selected: AppThemeId.values[map['selected'] as int? ?? 0],
-      unlocked: unlockedRaw
-          .map((i) => AppThemeId.values[i as int])
-          .toList(),
-    );
+    final unlockedRaw = map['unlocked'] as List? ??
+        [AppThemeId.enchantedNight.index];
+    final themes = AppThemeId.values;
+    AppThemeId parseId(int i) =>
+        (i >= 0 && i < themes.length) ? themes[i] : AppThemeId.enchantedNight;
+
+    var selected = parseId(map['selected'] as int? ??
+        AppThemeId.enchantedNight.index);
+    var unlocked = unlockedRaw.map((i) => parseId(i as int)).toList();
+
+    // First-time migration to Enchanted Night default: lock free Woodland.
+    final hadEnchanted =
+        unlocked.contains(AppThemeId.enchantedNight);
+    if (!hadEnchanted) {
+      unlocked = [
+        ...unlocked.where((e) => e != AppThemeId.midnightZen),
+        AppThemeId.enchantedNight,
+      ];
+      if (selected == AppThemeId.midnightZen) {
+        selected = AppThemeId.enchantedNight;
+      }
+    }
+    if (!unlocked.contains(AppThemeId.enchantedNight)) {
+      unlocked = [...unlocked, AppThemeId.enchantedNight];
+    }
+    if (!unlocked.contains(selected)) {
+      selected = AppThemeId.enchantedNight;
+    }
+
+    return ThemeStateData(selected: selected, unlocked: unlocked);
   }
 
   @override

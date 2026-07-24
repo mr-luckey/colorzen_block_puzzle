@@ -49,10 +49,10 @@ class ClearBurst extends StatelessWidget {
                   .move(
                     begin: Offset.zero,
                     end: Offset(math.cos(angle) * dist, math.sin(angle) * dist),
-                    duration: 650.ms,
+                    duration: 280.ms,
                     curve: Curves.easeOutCubic,
                   )
-                  .fadeOut(delay: 280.ms, duration: 380.ms)
+                  .fadeOut(delay: 60.ms, duration: 160.ms)
                   .rotate(begin: 0, end: rng.nextDouble() * 2 - 1),
             ),
           );

@@ -1,18 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'package:colorzen_block_puzzle/core/di/injection.dart';
 import 'package:colorzen_block_puzzle/core/theme/app_theme.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/settings/settings_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/theme/theme_cubit.dart';
-import 'package:colorzen_block_puzzle/presentation/widgets/ads/banner_ad_bar.dart';
-import 'package:colorzen_block_puzzle/presentation/widgets/app_button.dart';
 import 'package:colorzen_block_puzzle/services/ad_service.dart';
 import 'package:colorzen_block_puzzle/services/audio_service.dart';
 import 'package:colorzen_block_puzzle/services/haptic_service.dart';
-import 'package:colorzen_block_puzzle/services/iap_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -27,7 +23,6 @@ class SettingsScreen extends StatelessWidget {
         palette: palette,
         dimmed: true,
         child: SafeArea(
-          bottom: false,
           child: Column(
             children: [
               AppBar(
@@ -43,6 +38,19 @@ class SettingsScreen extends StatelessWidget {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                   children: [
+                    _SettingsCard(
+                      palette: palette,
+                      title: 'Themes',
+                      children: [
+                        Text(
+                          'Enchanted Night is free. Unlock more with Classic score or a rewarded ad.',
+                          style: AppTextStyles.mini(palette.textSecondary),
+                        ),
+                        const SizedBox(height: 12),
+                        _ThemesGrid(uiPalette: palette),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
                     _SettingsCard(
                       palette: palette,
                       title: 'Audio',
@@ -139,181 +147,6 @@ class SettingsScreen extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    _SettingsCard(
-                      palette: palette,
-                      title: 'Ads (test units)',
-                      children: [
-                        Text(
-                          'Google sample ads — banner, interstitial & rewarded.',
-                          style: AppTextStyles.mini(palette.textSecondary),
-                        ),
-                        const SizedBox(height: 12),
-                        AppButton(
-                          label: 'SHOW INTERSTITIAL',
-                          style: AppButtonStyle.secondary,
-                          onTap: settings.adsRemoved
-                              ? null
-                              : () async {
-                                  final shown = await sl<AdService>()
-                                      .showInterstitial(
-                                    adsRemoved: settings.adsRemoved,
-                                    ignoreCooldown: true,
-                                  );
-                                  if (!context.mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        shown
-                                            ? 'Interstitial shown.'
-                                            : 'Interstitial not ready / cooldown.',
-                                      ),
-                                    ),
-                                  );
-                                },
-                        ),
-                        const SizedBox(height: 10),
-                        AppButton(
-                          label: 'SHOW REWARDED',
-                          style: AppButtonStyle.secondary,
-                          onTap: () async {
-                            final ok = await sl<AdService>().showRewarded(
-                              onEarned: () {},
-                            );
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  ok
-                                      ? 'Reward earned.'
-                                      : 'Rewarded ad not ready. Try again.',
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          settings.adsRemoved
-                              ? 'Banner hidden — ads removed.'
-                              : 'Banner also shows at the bottom of this screen.',
-                          style: AppTextStyles.mini(palette.textSecondary),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    _SettingsCard(
-                      palette: palette,
-                      title: 'Store',
-                      children: [
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            settings.adsRemoved
-                                ? 'Ads Removed ✓'
-                                : 'Remove Ads',
-                            style: AppTextStyles.body(palette.textPrimary),
-                          ),
-                          subtitle: Text(
-                            settings.adsRemoved
-                                ? 'Thank you for supporting ColorZen'
-                                : 'One-time · hides banner & interstitial',
-                            style: AppTextStyles.mini(palette.textSecondary),
-                          ),
-                          trailing: Icon(
-                            settings.adsRemoved
-                                ? Icons.check_circle_rounded
-                                : Icons.chevron_right_rounded,
-                            color: settings.adsRemoved
-                                ? palette.accentPrimary
-                                : palette.textSecondary,
-                          ),
-                          onTap: settings.adsRemoved
-                              ? null
-                              : () async {
-                                  final ok = await sl<IapService>()
-                                      .purchaseRemoveAds();
-                                  if (!context.mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        ok
-                                            ? 'Purchase started…'
-                                            : 'Store unavailable. Try again later.',
-                                      ),
-                                    ),
-                                  );
-                                },
-                        ),
-                        const Divider(height: 8),
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            'Restore Purchases',
-                            style: AppTextStyles.body(palette.textPrimary),
-                          ),
-                          trailing: Icon(
-                            Icons.restore_rounded,
-                            color: palette.textSecondary,
-                          ),
-                          onTap: () async {
-                            final ok =
-                                await sl<IapService>().restorePurchases();
-                            if (!context.mounted) return;
-                            await Future<void>.delayed(
-                              const Duration(milliseconds: 400),
-                            );
-                            if (!context.mounted) return;
-                            final removed =
-                                context.read<SettingsCubit>().state.adsRemoved;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  removed
-                                      ? 'Purchases restored — ads removed.'
-                                      : (ok
-                                          ? 'Restore requested. Nothing found yet.'
-                                          : 'Nothing to restore.'),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    _SettingsCard(
-                      palette: palette,
-                      title: 'Info',
-                      children: [
-                        _LinkRow(
-                          palette: palette,
-                          label: 'Rate the App',
-                          onTap: () => launchUrl(
-                            Uri.parse(
-                              'https://play.google.com/store/apps/details?id=com.appwaretech.colorzen.puzzle',
-                            ),
-                            mode: LaunchMode.externalApplication,
-                          ),
-                        ),
-                        _LinkRow(
-                          palette: palette,
-                          label: 'Privacy Policy',
-                          onTap: () => launchUrl(
-                            Uri.parse('https://appwaretech.com/privacy'),
-                            mode: LaunchMode.externalApplication,
-                          ),
-                        ),
-                        _LinkRow(
-                          palette: palette,
-                          label: 'Terms of Service',
-                          onTap: () => launchUrl(
-                            Uri.parse('https://appwaretech.com/terms'),
-                            mode: LaunchMode.externalApplication,
-                          ),
-                        ),
-                      ],
-                    ),
                     const SizedBox(height: 20),
                     Center(
                       child: Text(
@@ -324,7 +157,6 @@ class SettingsScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              BannerAdBar(adsRemoved: settings.adsRemoved),
             ],
           ),
         ),
@@ -394,24 +226,210 @@ class _SwitchRow extends StatelessWidget {
   }
 }
 
-class _LinkRow extends StatelessWidget {
-  const _LinkRow({
-    required this.palette,
-    required this.label,
-    required this.onTap,
-  });
+class _ThemesGrid extends StatelessWidget {
+  const _ThemesGrid({required this.uiPalette});
 
-  final ColorPalette palette;
-  final String label;
-  final VoidCallback onTap;
+  final ColorPalette uiPalette;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(label, style: AppTextStyles.body(palette.textPrimary)),
-      trailing: Icon(Icons.open_in_new_rounded, color: palette.textSecondary),
-      onTap: onTap,
+    final themeState = context.watch<ThemeCubit>().state;
+
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 1.35,
+      children: AppThemeId.values.map((id) {
+        final unlocked = themeState.isUnlocked(id);
+        final selected = themeState.selected == id;
+        final p = AppPalettes.of(id);
+        return _ThemeTile(
+          id: id,
+          palette: p,
+          uiPalette: uiPalette,
+          unlocked: unlocked,
+          selected: selected,
+          onSelect: () => context.read<ThemeCubit>().selectTheme(id),
+          onUnlockAd: () async {
+            final ok = await sl<AdService>().showRewarded(onEarned: () {});
+            if (!context.mounted) return;
+            if (ok) {
+              await context.read<ThemeCubit>().unlockTheme(id);
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${AppPalettes.nameOf(id)} unlocked!'),
+                ),
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Rewarded ad not ready. Try again in a moment.',
+                  ),
+                ),
+              );
+            }
+          },
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _ThemeTile extends StatelessWidget {
+  const _ThemeTile({
+    required this.id,
+    required this.palette,
+    required this.uiPalette,
+    required this.unlocked,
+    required this.selected,
+    required this.onSelect,
+    required this.onUnlockAd,
+  });
+
+  final AppThemeId id;
+  final ColorPalette palette;
+  final ColorPalette uiPalette;
+  final bool unlocked;
+  final bool selected;
+  final VoidCallback onSelect;
+  final VoidCallback onUnlockAd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: unlocked
+            ? onSelect
+            : () {
+                showModalBottomSheet<void>(
+                  context: context,
+                  backgroundColor: uiPalette.surface,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(24),
+                    ),
+                  ),
+                  builder: (ctx) => Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Unlock ${AppPalettes.nameOf(id)}',
+                          style: AppTextStyles.section(uiPalette.textPrimary),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Reach ${AppPalettes.unlockScore(id)} Classic points, or watch a rewarded ad.',
+                          style: AppTextStyles.body(uiPalette.textSecondary),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: uiPalette.accentPrimary,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            onUnlockAd();
+                          },
+                          child: const Text('Watch Ad to Unlock'),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                    ),
+                  ),
+                );
+              },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: palette.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? palette.accentPrimary
+                  : palette.accentPrimary.withValues(alpha: 0.2),
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Stack(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    AppPalettes.nameOf(id),
+                    style: AppTextStyles.mini(palette.textPrimary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: palette.blocks
+                        .take(4)
+                        .map(
+                          (c) => Container(
+                            width: 14,
+                            height: 14,
+                            margin: const EdgeInsets.only(right: 3),
+                            decoration: BoxDecoration(
+                              color: c,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white24),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const Spacer(),
+                  Text(
+                    selected
+                        ? 'SELECTED'
+                        : (!unlocked
+                            ? '${AppPalettes.unlockScore(id)} pts'
+                            : 'TAP'),
+                    style: AppTextStyles.mini(
+                      selected
+                          ? palette.accentSecondary
+                          : palette.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+              if (!unlocked)
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.lock_rounded,
+                        color: Colors.white70,
+                        size: 22,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

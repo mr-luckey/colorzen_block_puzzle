@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
@@ -34,11 +35,7 @@ import 'package:colorzen_block_puzzle/services/haptic_service.dart';
 import 'package:colorzen_block_puzzle/services/share_service.dart';
 
 class GameScreen extends StatelessWidget {
-  const GameScreen({
-    super.key,
-    required this.mode,
-    this.forceNew = false,
-  });
+  const GameScreen({super.key, required this.mode, this.forceNew = false});
 
   final GameMode mode;
   final bool forceNew;
@@ -174,11 +171,10 @@ class _GameViewState extends State<_GameView> {
                 _pushFx(
                   (f) => f.copyWith(
                     showBombArmed: true,
-                    bombKind:
-                        state.session.timeBomb?.kind ?? BombKind.conveyor,
+                    bombKind: state.session.timeBomb?.kind ?? BombKind.conveyor,
                   ),
                 );
-                Future<void>.delayed(1800.ms, () {
+                Future<void>.delayed(700.ms, () {
                   if (mounted) {
                     _pushFx((f) => f.copyWith(showBombArmed: false));
                   }
@@ -191,7 +187,7 @@ class _GameViewState extends State<_GameView> {
                     nukeBonus: state.lastScoreGained,
                   ),
                 );
-                Future<void>.delayed(1600.ms, () {
+                Future<void>.delayed(650.ms, () {
                   if (mounted) {
                     _pushFx(
                       (f) => f.copyWith(showBoardNuke: false, nukeBonus: 0),
@@ -203,7 +199,8 @@ class _GameViewState extends State<_GameView> {
             if (state is GamePlaying &&
                 (state.lastScoreGained > 0 ||
                     state.praise != MovePraise.none)) {
-              final cleared = state.clearedRows.isNotEmpty ||
+              final cleared =
+                  state.clearedRows.isNotEmpty ||
                   state.clearedCols.isNotEmpty ||
                   state.blastCells.isNotEmpty;
               _pushFx((f) {
@@ -225,7 +222,7 @@ class _GameViewState extends State<_GameView> {
                 }
                 return next;
               });
-              Future<void>.delayed(900.ms, () {
+              Future<void>.delayed(450.ms, () {
                 if (mounted) {
                   _pushFx(
                     (f) => f.copyWith(
@@ -241,6 +238,7 @@ class _GameViewState extends State<_GameView> {
             if (state is GameOverState && !_gameOverShown) {
               _gameOverShown = true;
               final removed = context.read<SettingsCubit>().state.adsRemoved;
+              // Best interstitial moment: natural break after a run ends.
               await sl<AdService>().showInterstitial(adsRemoved: removed);
               if (!context.mounted) return;
               await _showGameOver(context, state, palette);
@@ -279,129 +277,137 @@ class _GameViewState extends State<_GameView> {
                             children: [
                               if (fx.floatingScore != null)
                                 Align(
-                                alignment: const Alignment(0, -0.25),
-                                child: Text(
-                                  '+${fx.floatingScore}',
-                                  style: AppTextStyles.score(palette.comboGold)
-                                      .copyWith(
-                                    fontSize: 42,
-                                    shadows: [
-                                      Shadow(
-                                        color: palette.comboGold
-                                            .withValues(alpha: 0.6),
-                                        blurRadius: 16,
-                                      ),
-                                    ],
-                                  ),
-                                )
-                                    .animate()
-                                    .scale(
-                                      begin: const Offset(0.6, 0.6),
-                                      end: const Offset(1.1, 1.1),
-                                      duration: 280.ms,
-                                      curve: Curves.easeOutBack,
-                                    )
-                                    .moveY(
-                                      begin: 0,
-                                      end: -56,
-                                      duration: 700.ms,
-                                    )
-                                    .fadeOut(
-                                      delay: 280.ms,
-                                      duration: 420.ms,
+                                  alignment: const Alignment(0, -0.25),
+                                  child:
+                                      Text(
+                                            '+${fx.floatingScore}',
+                                            style:
+                                                AppTextStyles.score(
+                                                  palette.comboGold,
+                                                ).copyWith(
+                                                  fontSize: 42,
+                                                  shadows: [
+                                                    Shadow(
+                                                      color: palette.comboGold
+                                                          .withValues(
+                                                            alpha: 0.6,
+                                                          ),
+                                                      blurRadius: 16,
+                                                    ),
+                                                  ],
+                                                ),
+                                          )
+                                          .animate()
+                                          .scale(
+                                            begin: const Offset(0.6, 0.6),
+                                            end: const Offset(1.1, 1.1),
+                                            duration: 280.ms,
+                                            curve: Curves.easeOutBack,
+                                          )
+                                          .moveY(
+                                            begin: 0,
+                                            end: -56,
+                                            duration: 700.ms,
+                                          )
+                                          .fadeOut(
+                                            delay: 280.ms,
+                                            duration: 420.ms,
+                                          ),
+                                ),
+                              if (fx.showBurst)
+                                Align(
+                                  alignment: const Alignment(0, -0.05),
+                                  child: SizedBox(
+                                    width: 220,
+                                    height: 220,
+                                    child: ClearBurst(
+                                      seed: fx.burstSeed,
+                                      colors: [
+                                        palette.comboGold,
+                                        palette.accentPrimary,
+                                        palette.accentSecondary,
+                                        ...palette.blocks.take(3),
+                                      ],
                                     ),
-                              ),
-                            if (fx.showBurst)
-                              Align(
-                                alignment: const Alignment(0, -0.05),
-                                child: SizedBox(
-                                  width: 220,
-                                  height: 220,
-                                  child: ClearBurst(
-                                    seed: fx.burstSeed,
-                                    colors: [
-                                      palette.comboGold,
-                                      palette.accentPrimary,
-                                      palette.accentSecondary,
-                                      ...palette.blocks.take(3),
-                                    ],
                                   ),
                                 ),
-                              ),
-                            if (fx.praise != MovePraise.none)
-                              MovePraiseBanner(
-                                key: ValueKey('praise_${fx.praiseKey}'),
-                                praise: fx.praise,
-                                palette: palette,
-                              ),
-                            if (fx.showBombArmed)
-                              BombArmedBanner(
-                                palette: palette,
-                                kind: fx.bombKind,
-                              ),
-                            if (fx.showBoardNuke)
-                              BoardNukeOverlay(
-                                palette: palette,
-                                bonus: fx.nukeBonus,
-                              ),
-                            if (fx.showCombo)
-                              Positioned(
-                                top: 100,
-                                right: 16,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: palette.comboGold
-                                        .withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border:
-                                        Border.all(color: palette.comboGold),
-                                  ),
-                                  child: Text(
-                                    'COMBO ×1.5!',
-                                    style: AppTextStyles.section(
-                                      palette.comboGold,
-                                    ),
-                                  ),
-                                )
-                                    .animate()
-                                    .slideX(
-                                      begin: 1,
-                                      end: 0,
-                                      duration: 300.ms,
-                                    )
-                                    .then(delay: 200.ms)
-                                    .fadeOut(duration: 300.ms),
-                              ),
-                          ],
-                        );
-                      },
-                    ),
-                    Positioned(
-                      left: -9999,
-                      child: RepaintBoundary(
-                        key: _shareKey,
-                        child: state is GamePlaying || state is GameOverState
-                            ? ShareCardPainter.buildCard(
-                                session: state is GamePlaying
-                                    ? state.session
-                                    : (state as GameOverState).session,
-                                palette: palette,
-                              )
-                            : const SizedBox.shrink(),
+                              if (fx.praise != MovePraise.none)
+                                MovePraiseBanner(
+                                  key: ValueKey('praise_${fx.praiseKey}'),
+                                  praise: fx.praise,
+                                  palette: palette,
+                                ),
+                              if (fx.showBombArmed)
+                                BombArmedBanner(
+                                  palette: palette,
+                                  kind: fx.bombKind,
+                                ),
+                              if (fx.showBoardNuke)
+                                BoardNukeOverlay(
+                                  palette: palette,
+                                  bonus: fx.nukeBonus,
+                                ),
+                              if (fx.showCombo)
+                                Positioned(
+                                  top: 100,
+                                  right: 16,
+                                  child:
+                                      Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                              vertical: 8,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: palette.comboGold
+                                                  .withValues(alpha: 0.2),
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                              border: Border.all(
+                                                color: palette.comboGold,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              'COMBO ×1.5!',
+                                              style: AppTextStyles.section(
+                                                palette.comboGold,
+                                              ),
+                                            ),
+                                          )
+                                          .animate()
+                                          .slideX(
+                                            begin: 1,
+                                            end: 0,
+                                            duration: 300.ms,
+                                          )
+                                          .then(delay: 200.ms)
+                                          .fadeOut(duration: 300.ms),
+                                ),
+                            ],
+                          );
+                        },
                       ),
-                    ),
-                  ],
+                      Positioned(
+                        left: -9999,
+                        child: RepaintBoundary(
+                          key: _shareKey,
+                          child: state is GamePlaying || state is GameOverState
+                              ? ShareCardPainter.buildCard(
+                                  session: state is GamePlaying
+                                      ? state.session
+                                      : (state as GameOverState).session,
+                                  palette: palette,
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            bottomNavigationBar: BannerAdBar(adsRemoved: adsRemoved),
-          );
-        },
-      ),
+              bottomNavigationBar: BannerAdBar(adsRemoved: adsRemoved),
+            );
+          },
+        ),
       ),
     );
   }
@@ -422,16 +428,11 @@ class _GameViewState extends State<_GameView> {
       builder: (context, constraints) {
         final h = constraints.maxHeight;
         final w = constraints.maxWidth;
-        final pad = (w * 0.04).clamp(10.0, 18.0);
+        final pad = (w * 0.008).clamp(2.0, 6.0);
 
-        // Reserve fixed chrome first, then size grid to leftover space.
-        final headerH = 44.0;
-        final gaps = 12.0;
-        final trayH = (h * 0.155).clamp(96.0, 128.0);
-        // Score HUD (BEST / SCORE / MOVES).
-        final scoreEstimate = session.mode == GameMode.zen ? 56.0 : 64.0;
-        final reserved = headerH + scoreEstimate + trayH + gaps;
-        final gridBudget = (h - reserved).clamp(160.0, h);
+        // Compact chrome so the square board can fill the screen.
+        final headerH = 30.0;
+        final trayH = (h * 0.1).clamp(72.0, 96.0);
 
         return Padding(
           padding: EdgeInsets.symmetric(horizontal: pad),
@@ -445,8 +446,8 @@ class _GameViewState extends State<_GameView> {
                       tooltip: 'Menu',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(
-                        minWidth: 44,
-                        minHeight: 44,
+                        minWidth: 40,
+                        minHeight: 40,
                       ),
                       onPressed: () => _confirmExit(context, palette),
                       icon: Icon(
@@ -456,23 +457,35 @@ class _GameViewState extends State<_GameView> {
                       ),
                     ),
                     Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            AppConstants.appName,
-                            style: AppTextStyles.section(palette.textPrimary),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            modeLabel,
-                            style: AppTextStyles.mini(palette.textSecondary),
-                          ),
-                        ],
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              AppConstants.appName,
+                              style: AppTextStyles.section(
+                                palette.textPrimary,
+                              ).copyWith(height: 1.05),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                            Text(
+                              modeLabel,
+                              style: AppTextStyles.mini(
+                                palette.textSecondary,
+                              ).copyWith(height: 1.05),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 44),
+                    const SizedBox(width: 40),
                   ],
                 ),
               ),
@@ -480,51 +493,39 @@ class _GameViewState extends State<_GameView> {
                 score: session.score,
                 bestScore: session.bestScore,
                 palette: palette,
-                isNewBest: session.score > 0 &&
+                isNewBest:
+                    session.score > 0 &&
                     session.score >= session.bestScore &&
                     session.mode != GameMode.zen,
                 hideScore: session.mode == GameMode.zen,
                 movesMade: session.movesMade,
                 mode: session.mode,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 2),
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, gridBox) {
-                    final side = [
-                      gridBox.maxWidth,
-                      gridBox.maxHeight,
-                      gridBudget,
-                      w - pad * 2,
-                    ].reduce((a, b) => a < b ? a : b);
+                    // Use full leftover area — largest square that fits.
+                    final side = math.min(gridBox.maxWidth, gridBox.maxHeight);
 
                     return Center(
-                      child: ValueListenableBuilder<GhostState?>(
-                        valueListenable: _drag.ghost,
-                        builder: (context, ghost, child) {
-                          return GameGrid(
-                            gridKey: _gridKey,
-                            grid: session.grid,
-                            palette: palette,
-                            maxWidth: side,
-                            ghostMask: ghost?.mask,
-                            ghostColor: ghost?.color,
-                            isGhostValid: ghost?.valid ?? true,
-                            previewClearRows: ghost?.previewClearRows ?? const [],
-                            previewClearCols: ghost?.previewClearCols ?? const [],
-                            clearedRows: state.clearedRows,
-                            clearedCols: state.clearedCols,
-                            placementCells: state.placementAnimCells,
-                            blastCells: state.blastCells,
-                            timeBomb: session.timeBomb,
-                          );
-                        },
+                      child: GameGrid(
+                        gridKey: _gridKey,
+                        grid: session.grid,
+                        palette: palette,
+                        maxWidth: side,
+                        ghostListenable: _drag.ghost,
+                        clearedRows: state.clearedRows,
+                        clearedCols: state.clearedCols,
+                        placementCells: state.placementAnimCells,
+                        blastCells: state.blastCells,
+                        timeBomb: session.timeBomb,
                       ),
                     );
                   },
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 2),
               PieceTray(
                 pieces: session.currentPieces,
                 palette: palette,
@@ -535,12 +536,8 @@ class _GameViewState extends State<_GameView> {
                 stripBombs: session.mode == GameMode.zen,
                 onDrop: (pieceId, row, col) {
                   context.read<GameBloc>().add(
-                        PiecePlaced(
-                          pieceId: pieceId,
-                          row: row,
-                          col: col,
-                        ),
-                      );
+                    PiecePlaced(pieceId: pieceId, row: row, col: col),
+                  );
                 },
               ),
             ],
@@ -550,10 +547,7 @@ class _GameViewState extends State<_GameView> {
     );
   }
 
-  Future<void> _confirmExit(
-    BuildContext context,
-    ColorPalette palette,
-  ) async {
+  Future<void> _confirmExit(BuildContext context, ColorPalette palette) async {
     final blocState = context.read<GameBloc>().state;
     final session = switch (blocState) {
       GamePlaying(:final session) => session,
@@ -568,7 +562,11 @@ class _GameViewState extends State<_GameView> {
       moves: session?.movesMade ?? 0,
     );
     if (leave && context.mounted) {
-      Navigator.of(context).pop();
+      if ((session?.movesMade ?? 0) >= 5) {
+        final removed = context.read<SettingsCubit>().state.adsRemoved;
+        await sl<AdService>().showInterstitial(adsRemoved: removed);
+      }
+      if (context.mounted) Navigator.of(context).pop();
     }
   }
 
@@ -577,6 +575,9 @@ class _GameViewState extends State<_GameView> {
     GameOverState state,
     ColorPalette palette,
   ) async {
+    var bonusClaimed = false;
+    var displayScore = state.session.score;
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -589,36 +590,96 @@ class _GameViewState extends State<_GameView> {
           child: Container(
             color: Colors.black54,
             child: Center(
-              child: _GameOverCard(
-                session: state.session,
-                isNewBest: state.isNewBest,
-                palette: palette,
-                onPlayAgain: () {
-                  Navigator.pop(ctx);
-                  _gameOverShown = false;
-                  context.read<GameBloc>().add(const GameReset());
+              child: StatefulBuilder(
+                builder: (ctx, setSheet) {
+                  return _GameOverCard(
+                        session: state.session,
+                        displayScore: displayScore,
+                        isNewBest:
+                            state.isNewBest ||
+                            (displayScore > state.session.bestScore &&
+                                state.session.mode != GameMode.zen),
+                        palette: palette,
+                        bonusClaimed: bonusClaimed,
+                        onWatchBonus: state.session.mode == GameMode.zen
+                            ? null
+                            : () async {
+                                if (bonusClaimed) return;
+                                final ok = await sl<AdService>().showRewarded(
+                                  onEarned: () {},
+                                );
+                                if (!ctx.mounted) return;
+                                if (!ok) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Rewarded ad not ready. Try again shortly.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                bonusClaimed = true;
+                                displayScore += 250;
+                                final stats = await sl<GameRepository>()
+                                    .loadStats();
+                                if (state.session.mode == GameMode.classic &&
+                                    displayScore > stats.classicBest) {
+                                  await sl<GameRepository>().saveStats(
+                                    stats.copyWith(classicBest: displayScore),
+                                  );
+                                } else if (state.session.mode ==
+                                        GameMode.daily &&
+                                    displayScore > stats.dailyBest) {
+                                  await sl<GameRepository>().saveStats(
+                                    stats.copyWith(dailyBest: displayScore),
+                                  );
+                                }
+                                if (ctx.mounted) setSheet(() {});
+                              },
+                        onPlayAgain: () async {
+                          Navigator.pop(ctx);
+                          final removed = context
+                              .read<SettingsCubit>()
+                              .state
+                              .adsRemoved;
+                          await sl<AdService>().showInterstitial(
+                            adsRemoved: removed,
+                          );
+                          if (!context.mounted) return;
+                          _gameOverShown = false;
+                          context.read<GameBloc>().add(const GameReset());
+                        },
+                        onHome: () async {
+                          Navigator.pop(ctx);
+                          final removed = context
+                              .read<SettingsCubit>()
+                              .state
+                              .adsRemoved;
+                          await sl<AdService>().showInterstitial(
+                            adsRemoved: removed,
+                          );
+                          if (context.mounted) Navigator.of(context).pop();
+                        },
+                        onShare: state.session.mode == GameMode.daily
+                            ? () async {
+                                await sl<ShareService>().shareDailyResult(
+                                  session: state.session,
+                                  repaintKey: _shareKey,
+                                );
+                              }
+                            : null,
+                      )
+                      .animate()
+                      .slideY(
+                        begin: 0.35,
+                        end: 0,
+                        duration: 400.ms,
+                        curve: Curves.easeOut,
+                      )
+                      .fadeIn(duration: 280.ms);
                 },
-                onHome: () {
-                  Navigator.pop(ctx);
-                  Navigator.of(context).pop();
-                },
-                onShare: state.session.mode == GameMode.daily
-                    ? () async {
-                        await sl<ShareService>().shareDailyResult(
-                          session: state.session,
-                          repaintKey: _shareKey,
-                        );
-                      }
-                    : null,
-              )
-                  .animate()
-                  .slideY(
-                    begin: 0.35,
-                    end: 0,
-                    duration: 400.ms,
-                    curve: Curves.easeOut,
-                  )
-                  .fadeIn(duration: 280.ms),
+              ),
             ),
           ),
         );
@@ -630,18 +691,24 @@ class _GameViewState extends State<_GameView> {
 class _GameOverCard extends StatelessWidget {
   const _GameOverCard({
     required this.session,
+    required this.displayScore,
     required this.isNewBest,
     required this.palette,
     required this.onPlayAgain,
     required this.onHome,
+    this.onWatchBonus,
+    this.bonusClaimed = false,
     this.onShare,
   });
 
   final GameSession session;
+  final int displayScore;
   final bool isNewBest;
   final ColorPalette palette;
   final VoidCallback onPlayAgain;
   final VoidCallback onHome;
+  final VoidCallback? onWatchBonus;
+  final bool bonusClaimed;
   final VoidCallback? onShare;
 
   @override
@@ -681,8 +748,9 @@ class _GameOverCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             TweenAnimationBuilder<int>(
-              tween: IntTween(begin: 0, end: session.score),
-              duration: 1200.ms,
+              key: ValueKey(displayScore),
+              tween: IntTween(begin: 0, end: displayScore),
+              duration: 900.ms,
               curve: Curves.easeOut,
               builder: (_, value, child) => Text(
                 NumberFormat('#,###').format(value),
@@ -691,10 +759,7 @@ class _GameOverCard extends StatelessWidget {
             ),
             if (isNewBest) ...[
               const SizedBox(height: 8),
-              Text(
-                'NEW BEST!',
-                style: AppTextStyles.section(palette.comboGold),
-              )
+              Text('NEW BEST!', style: AppTextStyles.section(palette.comboGold))
                   .animate(onPlay: (c) => c.repeat(reverse: true))
                   .scale(
                     begin: const Offset(1, 1),
@@ -729,7 +794,15 @@ class _GameOverCard extends StatelessWidget {
                 _stat('Blocks', '${session.blocksPlaced}', palette),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
+            if (onWatchBonus != null) ...[
+              AppButton(
+                label: bonusClaimed ? 'BONUS CLAIMED ✓' : 'WATCH AD · +250',
+                style: AppButtonStyle.secondary,
+                onTap: bonusClaimed ? null : onWatchBonus,
+              ),
+              const SizedBox(height: 10),
+            ],
             AppButton(label: 'PLAY AGAIN', onTap: onPlayAgain),
             const SizedBox(height: 12),
             AppButton(
@@ -760,7 +833,6 @@ class _GameOverCard extends StatelessWidget {
     );
   }
 }
-
 
 class _GameFx {
   const _GameFx({
@@ -801,8 +873,9 @@ class _GameFx {
     BombKind? bombKind,
   }) {
     return _GameFx(
-      floatingScore:
-          clearFloating ? null : (floatingScore ?? this.floatingScore),
+      floatingScore: clearFloating
+          ? null
+          : (floatingScore ?? this.floatingScore),
       showCombo: showCombo ?? this.showCombo,
       showBurst: showBurst ?? this.showBurst,
       burstSeed: burstSeed ?? this.burstSeed,

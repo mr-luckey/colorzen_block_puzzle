@@ -29,4 +29,6 @@ class AppConstants {
   static const int interstitialCooldownMs = 180000;
   static const int desiUnlockScore = 5000;
   static const int arcticUnlockScore = 10000;
+  /// Previous free theme (Woodland) — now unlockable.
+  static const int woodlandUnlockScore = 3000;
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:colorzen_block_puzzle/core/constants/app_constants.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/theme/theme_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/particle_background.dart';
@@ -77,29 +78,59 @@ class AppPalettes {
     comboGold: Color(0xFFFFE082),
   );
 
+  /// Enchanted Night — default (cyan / magenta neon on moonlit forest).
+  static const enchantedNight = ColorPalette(
+    background: Color(0xFF0A1230),
+    gridBackground: Color(0xCC0A0E28),
+    gridLine: Color(0xFF1A2A55),
+    cellEmpty: Color(0x99081228),
+    surface: Color(0xE6121A3A),
+    accentPrimary: Color(0xFF00D2FF),
+    accentSecondary: Color(0xFFFFD700),
+    textPrimary: Color(0xFFFFFFFF),
+    textSecondary: Color(0xFFB8C8E8),
+    blocks: [
+      Color(0xFFE91E63), // pink / hearts
+      Color(0xFF00BCD4), // cyan laugh
+      Color(0xFF7C4DFF), // violet
+      Color(0xFFFF80AB), // soft pink
+      Color(0xFF40C4FF), // sky cyan
+      Color(0xFF69F0AE), // mint
+    ],
+    comboGold: Color(0xFFFFD700),
+    invalidRed: Color(0xFFFF5252),
+  );
+
   static ColorPalette of(AppThemeId id) => switch (id) {
+        AppThemeId.enchantedNight => enchantedNight,
         AppThemeId.midnightZen => woodland,
         AppThemeId.desiRangoli => oceanBreeze,
         AppThemeId.arcticIce => sunsetGlow,
       };
 
   static String nameOf(AppThemeId id) => switch (id) {
+        AppThemeId.enchantedNight => 'Enchanted Night',
         AppThemeId.midnightZen => 'Woodland',
         AppThemeId.desiRangoli => 'Ocean Breeze',
         AppThemeId.arcticIce => 'Sunset Glow',
       };
 
   static String backgroundAsset(AppThemeId id) => switch (id) {
+        AppThemeId.enchantedNight => 'assets/images/bg_enchanted_night.png',
         AppThemeId.midnightZen => 'assets/images/bg_woodland.png',
         AppThemeId.desiRangoli => 'assets/images/bg_ocean.png',
         AppThemeId.arcticIce => 'assets/images/bg_sunset.png',
       };
 
   static int unlockScore(AppThemeId id) => switch (id) {
-        AppThemeId.midnightZen => 0,
-        AppThemeId.desiRangoli => 5000,
-        AppThemeId.arcticIce => 10000,
+        AppThemeId.enchantedNight => 0,
+        AppThemeId.midnightZen => AppConstants.woodlandUnlockScore,
+        AppThemeId.desiRangoli => AppConstants.desiUnlockScore,
+        AppThemeId.arcticIce => AppConstants.arcticUnlockScore,
       };
+
+  static bool usesNeonFrame(AppThemeId id) =>
+      id == AppThemeId.enchantedNight;
 }
 
 class AppTextStyles {
@@ -305,18 +336,18 @@ class _WoodBackgroundState extends State<WoodBackground>
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Colors.black.withValues(alpha: widget.dimmed ? 0.35 : 0.14),
+                Colors.black.withValues(alpha: widget.dimmed ? 0.32 : 0.08),
                 palette.background.withValues(
-                  alpha: widget.dimmed ? 0.55 : 0.3,
+                  alpha: widget.dimmed ? 0.48 : 0.18,
                 ),
-                Colors.black.withValues(alpha: widget.dimmed ? 0.62 : 0.42),
+                Colors.black.withValues(alpha: widget.dimmed ? 0.58 : 0.28),
               ],
               stops: const [0.0, 0.55, 1.0],
             ),
           ),
         ),
         if (widget.dimmed)
-          ColoredBox(color: Colors.black.withValues(alpha: 0.28)),
+          ColoredBox(color: Colors.black.withValues(alpha: 0.22)),
         if (widget.animated)
           IgnorePointer(child: ParticleBackground(palette: palette)),
         ?widget.child,
@@ -369,7 +400,7 @@ class _WoodBackgroundState extends State<WoodBackground>
   }
 }
 
-/// Recessed glass panel used for cards / trays.
+/// Recessed glass panel — Enchanted Night uses cyan→magenta neon frame.
 class WoodPanel extends StatelessWidget {
   const WoodPanel({
     super.key,
@@ -378,6 +409,7 @@ class WoodPanel extends StatelessWidget {
     this.padding = const EdgeInsets.all(14),
     this.radius = 18,
     this.borderColor,
+    this.neon = false,
   });
 
   final ColorPalette palette;
@@ -385,40 +417,85 @@ class WoodPanel extends StatelessWidget {
   final EdgeInsets padding;
   final double radius;
   final Color? borderColor;
+  final bool neon;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final useNeon =
+        neon || palette.accentPrimary == AppPalettes.enchantedNight.accentPrimary;
+
+    final inner = Container(
       padding: padding,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
+        borderRadius: BorderRadius.circular(useNeon ? radius - 1.2 : radius),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color.lerp(palette.surface, Colors.white, 0.18)!,
+            Color.lerp(palette.surface, Colors.white, 0.12)!,
             palette.surface,
-            Color.lerp(palette.surface, palette.accentPrimary, 0.22)!,
+            Color.lerp(palette.surface, palette.accentPrimary, 0.18)!,
           ],
         ),
-        border: Border.all(
-          color: borderColor ?? palette.accentPrimary.withValues(alpha: 0.55),
-          width: 1.6,
+        border: useNeon
+            ? null
+            : Border.all(
+                color:
+                    borderColor ?? palette.accentPrimary.withValues(alpha: 0.55),
+                width: 1.6,
+              ),
+        boxShadow: useNeon
+            ? null
+            : [
+                BoxShadow(
+                  color: palette.accentPrimary.withValues(alpha: 0.28),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 14,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+      ),
+      child: child,
+    );
+
+    if (!useNeon) return inner;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            Color(0xFF00D2FF),
+            Color(0xFF7C4DFF),
+            Color(0xFFFF00AA),
+          ],
         ),
         boxShadow: [
           BoxShadow(
-            color: palette.accentPrimary.withValues(alpha: 0.28),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
+            color: const Color(0xFF00D2FF).withValues(alpha: 0.35),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
+            color: const Color(0xFFFF00AA).withValues(alpha: 0.25),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
             blurRadius: 14,
             offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: child,
+      padding: const EdgeInsets.all(1.7),
+      child: inner,
     );
   }
 }

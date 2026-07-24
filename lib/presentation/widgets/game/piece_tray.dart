@@ -292,9 +292,9 @@ class _ConveyorPiece extends StatelessWidget {
   final VoidCallback onDragEnd;
 
   double get _cellSize {
-    final maxDim = (trayHeight - 28) /
+    final maxDim = (trayHeight - 16) /
         (piece.rows > piece.cols ? piece.rows : piece.cols.clamp(1, 5));
-    return maxDim.clamp(12.0, 24.0);
+    return maxDim.clamp(16.0, 32.0);
   }
 
   void _onUpdate(Offset global) {
@@ -391,7 +391,7 @@ class ScoreDisplay extends StatelessWidget {
     if (hideScore) {
       return WoodPanel(
         palette: palette,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         child: Row(
           children: [
             Expanded(
@@ -412,7 +412,7 @@ class ScoreDisplay extends StatelessWidget {
 
     return WoodPanel(
       palette: palette,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       child: Row(
         children: [
           Expanded(

@@ -209,9 +209,9 @@ class BoardNukeOverlay extends StatelessWidget {
         children: [
           Container(color: Colors.white.withValues(alpha: 0.12))
               .animate()
-              .fadeIn(duration: 80.ms)
+              .fadeIn(duration: 40.ms)
               .then()
-              .fadeOut(duration: 500.ms),
+              .fadeOut(duration: 220.ms),
           ...List.generate(24, (i) {
             final angle = (i / 24) * math.pi * 2;
             final dist = 60.0 + (i % 5) * 28;
@@ -249,10 +249,10 @@ class BoardNukeOverlay extends StatelessWidget {
                         math.cos(angle) * dist,
                         math.sin(angle) * dist,
                       ),
-                      duration: 900.ms,
+                      duration: 320.ms,
                       curve: Curves.easeOutCubic,
                     )
-                    .fadeOut(delay: 350.ms, duration: 500.ms)
+                    .fadeOut(delay: 80.ms, duration: 200.ms)
                     .rotate(begin: 0, end: 1.2),
               ),
             );
@@ -278,17 +278,17 @@ class BoardNukeOverlay extends StatelessWidget {
                     .scale(
                       begin: const Offset(0.4, 0.4),
                       end: const Offset(1.12, 1.12),
-                      duration: 380.ms,
+                      duration: 160.ms,
                       curve: Curves.easeOutBack,
                     )
                     .then()
                     .scale(
                       begin: const Offset(1.12, 1.12),
                       end: const Offset(1, 1),
-                      duration: 140.ms,
+                      duration: 70.ms,
                     )
-                    .then(delay: 700.ms)
-                    .fadeOut(duration: 300.ms),
+                    .then(delay: 280.ms)
+                    .fadeOut(duration: 160.ms),
                 if (bonus > 0)
                   Text(
                     '+$bonus',
@@ -300,9 +300,9 @@ class BoardNukeOverlay extends StatelessWidget {
                     ),
                   )
                       .animate()
-                      .fadeIn(delay: 120.ms)
-                      .moveY(begin: 12, end: -20, duration: 900.ms)
-                      .fadeOut(delay: 500.ms, duration: 350.ms),
+                      .fadeIn(delay: 40.ms)
+                      .moveY(begin: 12, end: -20, duration: 380.ms)
+                      .fadeOut(delay: 160.ms, duration: 180.ms),
               ],
             ),
           ),
@@ -370,12 +370,12 @@ class BombArmedBanner extends StatelessWidget {
             .slideY(
               begin: -0.4,
               end: 0,
-              duration: 320.ms,
+              duration: 160.ms,
               curve: Curves.easeOutBack,
             )
-            .fadeIn(duration: 200.ms)
-            .then(delay: 1400.ms)
-            .fadeOut(duration: 280.ms),
+            .fadeIn(duration: 120.ms)
+            .then(delay: 550.ms)
+            .fadeOut(duration: 160.ms),
       ),
     );
   }
