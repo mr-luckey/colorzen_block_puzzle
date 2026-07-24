@@ -154,9 +154,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       final compact = constraints.maxHeight < 620;
-                      final heroHeight = compact
-                          ? (cardSide * 0.92).clamp(220.0, 300.0)
+                      // Portrait card: art + labels. Height leaves room so Column never overflows.
+                      final cardWidth = compact
+                          ? (cardSide * 0.9).clamp(220.0, 300.0)
                           : cardSide;
+                      final heroHeight = cardWidth * 1.28;
 
                       Widget actions() => _ModeActions(
                             mode: _currentMode,
@@ -218,7 +220,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                     child: _ModeHeroCard(
                                       mode: mode,
                                       palette: palette,
-                                      side: heroHeight,
+                                      width: cardWidth,
+                                      height: heroHeight,
                                       daily: daily,
                                       selected: active,
                                       onTap: () {
@@ -479,7 +482,8 @@ class _ModeHeroCard extends StatelessWidget {
   const _ModeHeroCard({
     required this.mode,
     required this.palette,
-    required this.side,
+    required this.width,
+    required this.height,
     required this.daily,
     required this.selected,
     required this.onTap,
@@ -487,7 +491,8 @@ class _ModeHeroCard extends StatelessWidget {
 
   final GameMode mode;
   final ColorPalette palette;
-  final double side;
+  final double width;
+  final double height;
   final DailyChallengeState daily;
   final bool selected;
   final VoidCallback onTap;
@@ -527,7 +532,9 @@ class _ModeHeroCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = _visual;
-    final radius = (side * 0.08).clamp(18.0, 28.0);
+    final radius = (width * 0.08).clamp(18.0, 28.0);
+    final pad = (width * 0.035).clamp(9.0, 12.0);
+    final artRadius = radius * 0.65;
 
     return Material(
       color: Colors.transparent,
@@ -536,8 +543,8 @@ class _ModeHeroCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(radius),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 220),
-          width: side,
-          height: side,
+          width: width,
+          height: height,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(radius),
             boxShadow: [
@@ -557,12 +564,13 @@ class _ModeHeroCard extends StatelessWidget {
             palette: palette,
             radius: radius,
             borderColor: v.accent.withValues(alpha: 0.7),
-            padding: EdgeInsets.all(side * 0.045),
+            padding: EdgeInsets.fromLTRB(pad, pad, pad, pad * 0.75),
             child: Column(
               children: [
+                // Fills remaining height — no AspectRatio overflow inside fixed slot.
                 Expanded(
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(radius * 0.7),
+                    borderRadius: BorderRadius.circular(artRadius),
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -570,27 +578,22 @@ class _ModeHeroCard extends StatelessWidget {
                           color: Color.lerp(
                             palette.gridBackground,
                             v.glow,
-                            0.12,
+                            0.1,
                           )!,
                         ),
-                        // Square art (1024²) — contain so trophy/blocks aren't cropped.
-                        Padding(
-                          padding: EdgeInsets.all(side * 0.02),
-                          child: Image.asset(
-                            assetFor(mode),
-                            fit: BoxFit.contain,
-                            alignment: Alignment.center,
-                            filterQuality: FilterQuality.high,
-                            errorBuilder: (_, error, stack) => Center(
-                              child: Icon(
-                                Icons.image_rounded,
-                                size: side * 0.28,
-                                color: v.accent,
-                              ),
+                        Image.asset(
+                          assetFor(mode),
+                          fit: BoxFit.cover,
+                          alignment: Alignment.center,
+                          filterQuality: FilterQuality.high,
+                          errorBuilder: (_, error, stack) => Center(
+                            child: Icon(
+                              Icons.image_rounded,
+                              size: width * 0.28,
+                              color: v.accent,
                             ),
                           ),
                         ),
-                        // Theme tint wash so art matches active palette.
                         IgnorePointer(
                           child: DecoratedBox(
                             decoration: BoxDecoration(
@@ -598,9 +601,9 @@ class _ModeHeroCard extends StatelessWidget {
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
                                 colors: [
-                                  v.glow.withValues(alpha: 0.14),
+                                  v.glow.withValues(alpha: 0.1),
                                   Colors.transparent,
-                                  palette.background.withValues(alpha: 0.22),
+                                  palette.background.withValues(alpha: 0.18),
                                 ],
                               ),
                             ),
@@ -610,22 +613,24 @@ class _ModeHeroCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                SizedBox(height: side * 0.028),
+                SizedBox(height: pad * 0.55),
                 Text(
                   v.title,
                   style: AppTextStyles.section(palette.textPrimary).copyWith(
-                    fontSize: (side * 0.06).clamp(14.0, 18.0),
+                    fontSize: (width * 0.06).clamp(14.0, 18.0),
                     letterSpacing: 1.2,
+                    height: 1.1,
                   ),
                 ),
-                SizedBox(height: side * 0.01),
+                SizedBox(height: pad * 0.2),
                 Text(
                   v.subtitle,
                   textAlign: TextAlign.center,
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.mini(palette.textSecondary).copyWith(
-                    fontSize: (side * 0.038).clamp(10.0, 12.0),
+                    fontSize: (width * 0.038).clamp(10.0, 12.0),
+                    height: 1.1,
                   ),
                 ),
               ],
