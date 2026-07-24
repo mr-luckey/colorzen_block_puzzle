@@ -3,7 +3,7 @@ import 'package:flutter/widgets.dart';
 
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 
-enum SfxType { tap, pickup, place, clear, combo, invalid, gameOver }
+enum SfxType { tap, pickup, place, clear, combo, invalid, gameOver, tick }
 
 abstract class AudioService {
   Future<void> init();
@@ -39,6 +39,7 @@ class AudioPlayersService implements AudioService {
     SfxType.combo: 'audio/combo.wav',
     SfxType.invalid: 'audio/invalid.wav',
     SfxType.gameOver: 'audio/clear.wav',
+    SfxType.tick: 'audio/tick.wav',
   };
 
   double get _musicGain =>
@@ -91,7 +92,10 @@ class AudioPlayersService implements AudioService {
       final player = _sfxPool[_sfxIndex % _sfxPool.length];
       _sfxIndex++;
       await player.stop();
-      await player.play(AssetSource(file), volume: 0.95);
+      await player.play(
+        AssetSource(file),
+        volume: type == SfxType.tick ? 0.55 : 0.95,
+      );
     } catch (_) {}
   }
 

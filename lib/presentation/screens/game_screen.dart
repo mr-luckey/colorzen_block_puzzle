@@ -510,6 +510,8 @@ class _GameViewState extends State<_GameView> {
                             ghostMask: ghost?.mask,
                             ghostColor: ghost?.color,
                             isGhostValid: ghost?.valid ?? true,
+                            previewClearRows: ghost?.previewClearRows ?? const [],
+                            previewClearCols: ghost?.previewClearCols ?? const [],
                             clearedRows: state.clearedRows,
                             clearedCols: state.clearedCols,
                             placementCells: state.placementAnimCells,

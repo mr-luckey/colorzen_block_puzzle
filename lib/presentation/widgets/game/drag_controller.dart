@@ -1,9 +1,11 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import 'package:colorzen_block_puzzle/domain/engines/game_engine.dart';
+import 'package:colorzen_block_puzzle/domain/engines/line_clear_engine.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/game_grid.dart';
 
@@ -23,7 +25,9 @@ class PieceDragController {
   bool get isDragging => piece.value != null;
 
   /// Piece floats above the finger (classic puzzle feel).
-  static const double fingerLift = 64;
+  static const double fingerLift = 72;
+  /// Visual scale while dragging (tray stays small; board snap stays 1.0).
+  static const double pickupScale = 1.42;
 
   void start({
     required Piece p,
@@ -52,6 +56,8 @@ class PieceDragController {
     required bool valid,
     required int? row,
     required int? col,
+    List<int> previewClearRows = const [],
+    List<int> previewClearCols = const [],
   }) {
     if (mask == null) {
       if (ghost.value != null) ghost.value = null;
@@ -63,7 +69,9 @@ class PieceDragController {
         prev.valid == valid &&
         prev.row == (row ?? 0) &&
         prev.col == (col ?? 0) &&
-        prev.color == color) {
+        prev.color == color &&
+        listEquals(prev.previewClearRows, previewClearRows) &&
+        listEquals(prev.previewClearCols, previewClearCols)) {
       return;
     }
     ghost.value = GhostState(
@@ -72,6 +80,8 @@ class PieceDragController {
       valid: valid,
       row: row ?? 0,
       col: col ?? 0,
+      previewClearRows: previewClearRows,
+      previewClearCols: previewClearCols,
     );
   }
 
@@ -89,6 +99,8 @@ class GhostState {
     required this.valid,
     required this.row,
     required this.col,
+    this.previewClearRows = const [],
+    this.previewClearCols = const [],
   });
 
   final List<List<bool>> mask;
@@ -96,6 +108,13 @@ class GhostState {
   final bool valid;
   final int row;
   final int col;
+  /// Rows that would clear if this ghost were placed.
+  final List<int> previewClearRows;
+  /// Columns that would clear if this ghost were placed.
+  final List<int> previewClearCols;
+
+  bool get wouldClearLine =>
+      previewClearRows.isNotEmpty || previewClearCols.isNotEmpty;
 }
 
 /// Accurate placement math: floating piece top-left → board cells.
@@ -225,12 +244,23 @@ class DragMath {
       return;
     }
 
+    var previewRows = const <int>[];
+    var previewCols = const <int>[];
+    if (valid) {
+      final previewGrid = GameEngine.place(board, piece, row, col);
+      final clears = LineClearEngine.detectFullLines(previewGrid);
+      previewRows = clears.$1;
+      previewCols = clears.$2;
+    }
+
     drag.setGhost(
       mask: mask,
       color: palette.blockColor(piece.color),
       valid: valid,
       row: row,
       col: col,
+      previewClearRows: previewRows,
+      previewClearCols: previewCols,
     );
   }
 }
@@ -326,22 +356,28 @@ class _FloatingPiece extends StatelessWidget {
     final size = DragMath.piecePixelSize(piece);
     final topLeft = DragMath.pieceTopLeftGlobal(finger, piece);
     final cell = math.max(12.0, BoardSnap.cell);
+    final scale = PieceDragController.pickupScale;
 
-    // No center-scale — must match DragMath top-left exactly for accurate ghost.
+    // Bigger visual on pickup; ghost math still uses BoardSnap (unscaled).
     return IgnorePointer(
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
           Positioned(
             left: topLeft.dx,
             top: topLeft.dy,
             width: size.width,
             height: size.height,
-            child: PiecePreview(
-              piece: piece,
-              palette: palette,
-              cellSize: cell,
-              gap: BoardSnap.gap,
-              elevated: true,
+            child: Transform.scale(
+              scale: scale,
+              alignment: Alignment.center,
+              child: PiecePreview(
+                piece: piece,
+                palette: palette,
+                cellSize: cell,
+                gap: BoardSnap.gap,
+                elevated: true,
+              ),
             ),
           ),
         ],

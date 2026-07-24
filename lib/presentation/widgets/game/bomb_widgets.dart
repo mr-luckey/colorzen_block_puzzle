@@ -5,9 +5,11 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import 'package:colorzen_block_puzzle/core/constants/app_constants.dart';
+import 'package:colorzen_block_puzzle/core/di/injection.dart';
 import 'package:colorzen_block_puzzle/core/theme/app_theme.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/block_visuals.dart';
+import 'package:colorzen_block_puzzle/services/audio_service.dart';
 
 /// Board bomb cell — self-ticking countdown (no parent setState).
 class BombCell extends StatefulWidget {
@@ -50,7 +52,14 @@ class _BombCellState extends State<BombCell>
     final next = (widget.bomb.remainingMs() / 1000)
         .ceil()
         .clamp(0, AppConstants.bombDurationSec);
-    if (_secs.value != next) _secs.value = next;
+    if (_secs.value != next) {
+      final prev = _secs.value;
+      _secs.value = next;
+      // Tick-tick each second while armed (skip first sync).
+      if (prev > 0 && next < prev && next >= 0) {
+        sl<AudioService>().playSfx(SfxType.tick);
+      }
+    }
   }
 
   @override

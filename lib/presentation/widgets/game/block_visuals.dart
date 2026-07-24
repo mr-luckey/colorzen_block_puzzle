@@ -3,7 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 
-/// Shared emoji + glass look for colored blocks (same color → same emoji).
+/// Shared emoji + 3D glass look for colored blocks (same color → same emoji).
 class BlockVisuals {
   BlockVisuals._();
 
@@ -19,7 +19,7 @@ class BlockVisuals {
         BlockColor.color5 => '🥳',
       };
 
-  /// Glass tile with color tint + centered emoji. Fits exactly in [size].
+  /// Chunky 3D tile with contrast emoji badge. Fits exactly in [size].
   static Widget glassBlock({
     required double size,
     required Color base,
@@ -29,104 +29,183 @@ class BlockVisuals {
     bool showEmoji = true,
   }) {
     final s = size.clamp(0.0, 1000.0);
-    final radius = borderRadius ?? BorderRadius.circular(s * 0.2);
+    final radius = borderRadius ?? BorderRadius.circular(s * 0.22);
+    final depth = elevated ? s * 0.12 : s * 0.08;
 
     return SizedBox(
       width: s,
       height: s,
-      child: ClipRRect(
-        borderRadius: radius,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            DecoratedBox(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Extruded bottom face (3D thickness).
+          Positioned(
+            left: 0,
+            right: 0,
+            top: depth * 0.35,
+            bottom: -depth * 0.15,
+            child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: radius,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    // Dark glass so yellow face emojis stay readable.
-                    Color.lerp(base, Colors.white, 0.1)!,
-                    base,
-                    Color.lerp(base, Colors.black, 0.35)!,
-                  ],
-                  stops: const [0.0, 0.45, 1.0],
-                ),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.28),
-                  width: 1.1,
-                ),
+                color: Color.lerp(base, Colors.black, 0.55),
                 boxShadow: [
                   BoxShadow(
-                    color:
-                        Colors.black.withValues(alpha: elevated ? 0.4 : 0.25),
-                    blurRadius: elevated ? 10 : 3,
-                    offset: Offset(0, elevated ? 5 : 1.5),
+                    color: Colors.black.withValues(alpha: elevated ? 0.55 : 0.35),
+                    blurRadius: elevated ? 14 : 5,
+                    offset: Offset(0, elevated ? 7 : 3),
                   ),
                   BoxShadow(
-                    color: base.withValues(alpha: 0.4),
-                    blurRadius: elevated ? 12 : 6,
-                    spreadRadius: 0.2,
+                    color: base.withValues(alpha: 0.45),
+                    blurRadius: elevated ? 16 : 8,
+                    spreadRadius: 0.4,
                   ),
                 ],
               ),
             ),
-            const ColoredBox(color: Color(0x10FFFFFF)),
-            Align(
-              alignment: Alignment.topCenter,
-              child: FractionallySizedBox(
-                heightFactor: 0.38,
-                widthFactor: 1,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(s * 0.2),
-                    ),
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withValues(alpha: 0.2),
-                        Colors.white.withValues(alpha: 0.04),
-                        Colors.white.withValues(alpha: 0),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: s * 0.1,
-              left: s * 0.12,
-              child: Container(
-                width: s * 0.26,
-                height: s * 0.1,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(s),
-                  color: Colors.white.withValues(alpha: 0.18),
-                ),
-              ),
-            ),
-            if (showEmoji)
-              Center(
-                child: Text(
-                  emoji,
-                  style: TextStyle(
-                    fontSize: (s * 0.5).clamp(10.0, 28.0),
-                    height: 1,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black.withValues(alpha: 0.65),
-                        blurRadius: 5,
-                        offset: const Offset(0, 1),
+          ),
+          // Main face.
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: radius,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: radius,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color.lerp(base, Colors.white, 0.28)!,
+                          base,
+                          Color.lerp(base, Colors.black, 0.32)!,
+                          Color.lerp(base, Colors.black, 0.48)!,
+                        ],
+                        stops: const [0.0, 0.38, 0.78, 1.0],
                       ),
-                    ],
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.42),
+                        width: 1.2,
+                      ),
+                    ),
                   ),
-                ),
+                  // Left bevel (light).
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FractionallySizedBox(
+                      widthFactor: 0.14,
+                      heightFactor: 1,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.white.withValues(alpha: 0.35),
+                              Colors.white.withValues(alpha: 0),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Right / bottom bevel (dark).
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FractionallySizedBox(
+                      widthFactor: 0.16,
+                      heightFactor: 1,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.centerRight,
+                            end: Alignment.centerLeft,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.28),
+                              Colors.black.withValues(alpha: 0),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Top gloss.
+                  Align(
+                    alignment: Alignment.topCenter,
+                    child: FractionallySizedBox(
+                      heightFactor: 0.4,
+                      widthFactor: 1,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(s * 0.22),
+                          ),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.white.withValues(alpha: 0.38),
+                              Colors.white.withValues(alpha: 0.08),
+                              Colors.white.withValues(alpha: 0),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Specular chip.
+                  Positioned(
+                    top: s * 0.1,
+                    left: s * 0.12,
+                    child: Container(
+                      width: s * 0.28,
+                      height: s * 0.1,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(s),
+                        color: Colors.white.withValues(alpha: 0.32),
+                      ),
+                    ),
+                  ),
+                  if (showEmoji)
+                    Center(
+                      child: Container(
+                        width: s * 0.72,
+                        height: s * 0.72,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.black.withValues(alpha: 0.28),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.22),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.35),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          emoji,
+                          style: TextStyle(
+                            fontSize: (s * 0.46).clamp(10.0, 30.0),
+                            height: 1,
+                            shadows: const [
+                              Shadow(
+                                color: Colors.black87,
+                                blurRadius: 3,
+                                offset: Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }
