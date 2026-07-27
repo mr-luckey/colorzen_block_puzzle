@@ -17,9 +17,13 @@ import 'package:colorzen_block_puzzle/presentation/screens/game_screen.dart';
 import 'package:colorzen_block_puzzle/presentation/screens/settings_screen.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/ads/banner_ad_bar.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/app_button.dart';
+import 'package:colorzen_block_puzzle/presentation/widgets/review_prompt_dialog.dart';
+import 'package:colorzen_block_puzzle/presentation/widgets/update_available_dialog.dart';
 import 'package:colorzen_block_puzzle/services/ad_service.dart';
 import 'package:colorzen_block_puzzle/services/audio_service.dart';
 import 'package:colorzen_block_puzzle/services/haptic_service.dart';
+import 'package:colorzen_block_puzzle/services/review_service.dart';
+import 'package:colorzen_block_puzzle/services/update_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -32,6 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final PageController _pageController;
   int _page = 0;
   bool _dailyLoading = false;
+  bool _promptFlowRunning = false;
 
   static const _modes = [GameMode.classic, GameMode.daily, GameMode.zen];
 
@@ -45,7 +50,71 @@ class _HomeScreenState extends State<HomeScreen> {
       sl<AdService>().setMenuAdsActive(active: true, adsRemoved: removed);
       // ignore: discarded_futures
       sl<AudioService>().ensureMusicPlaying();
+      // ignore: discarded_futures
+      _onHomeReady();
     });
+  }
+
+  /// App start: Play update check first, then maybe a random review ask.
+  Future<void> _onHomeReady() async {
+    await sl<ReviewService>().recordAppOpen();
+    if (!mounted) return;
+    await _checkForAppUpdate();
+    if (!mounted) return;
+    // Random review while browsing home (after a short settle delay).
+    await Future<void>.delayed(const Duration(seconds: 8));
+    if (!mounted) return;
+    await _maybeShowReviewPrompt();
+  }
+
+  Future<void> _checkForAppUpdate() async {
+    if (_promptFlowRunning) return;
+    final available = await sl<UpdateService>().isUpdateAvailable();
+    if (!mounted || !available) return;
+    _promptFlowRunning = true;
+    try {
+      final palette =
+          AppPalettes.of(context.read<ThemeCubit>().state.selected);
+      final update = await showUpdateAvailableDialog(
+        context: context,
+        palette: palette,
+      );
+      if (update && mounted) {
+        await sl<UpdateService>().startUpdate();
+      }
+    } finally {
+      _promptFlowRunning = false;
+    }
+  }
+
+  Future<void> _maybeShowReviewPrompt() async {
+    if (_promptFlowRunning || !mounted) return;
+    // Only while home is visible — never interrupt an active game.
+    if (ModalRoute.of(context)?.isCurrent != true) return;
+    final should = await sl<ReviewService>().shouldShowPrompt();
+    if (!mounted || !should) return;
+    if (ModalRoute.of(context)?.isCurrent != true) return;
+    _promptFlowRunning = true;
+    try {
+      final palette =
+          AppPalettes.of(context.read<ThemeCubit>().state.selected);
+      final result = await showReviewPromptDialog(
+        context: context,
+        palette: palette,
+      );
+      if (!mounted) return;
+      switch (result) {
+        case ReviewPromptResult.rate:
+          await sl<ReviewService>().requestReview();
+        case ReviewPromptResult.never:
+          await sl<ReviewService>().markDeclinedForever();
+        case ReviewPromptResult.later:
+        case null:
+          await sl<ReviewService>().markPromptShown();
+      }
+    } finally {
+      _promptFlowRunning = false;
+    }
   }
 
   @override
@@ -73,6 +142,9 @@ class _HomeScreenState extends State<HomeScreen> {
       // Game / interstitial can leave BGM paused — kick it on home again.
       // ignore: discarded_futures
       sl<AudioService>().ensureMusicPlaying();
+      // Random review ask after a play session (while still using the app).
+      // ignore: discarded_futures
+      _maybeShowReviewPrompt();
     });
   }
 
@@ -105,13 +177,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<GameSession?> _savedClassic() async {
-    final s = await sl<GameRepository>().loadSession(GameMode.classic);
+  Future<({GameSession session, int best})?> _savedClassic() async {
+    final repo = sl<GameRepository>();
+    final s = await repo.loadSession(GameMode.classic);
     if (s == null || s.isGameOver) return null;
     final hasPieces = s.currentPieces.any((p) => p != null);
     final hasBlocks = s.grid.any((row) => row.any((c) => c != null));
     if (!hasPieces && !hasBlocks && s.movesMade <= 0) return null;
-    return s;
+    final stats = await repo.loadStats();
+    final best = [
+      stats.classicBest,
+      s.bestScore,
+      s.score,
+    ].reduce((a, b) => a > b ? a : b);
+    return (session: s, best: best);
   }
 
   void _goTo(int index) {
@@ -333,7 +412,7 @@ class _ModeActions extends StatelessWidget {
   final ColorPalette palette;
   final DailyChallengeState daily;
   final bool dailyLoading;
-  final Future<GameSession?> savedClassic;
+  final Future<({GameSession session, int best})?> savedClassic;
   final VoidCallback onContinueClassic;
   final VoidCallback onNewClassic;
   final VoidCallback onStartDaily;
@@ -342,7 +421,7 @@ class _ModeActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (mode) {
-      GameMode.classic => FutureBuilder<GameSession?>(
+      GameMode.classic => FutureBuilder<({GameSession session, int best})?>(
           future: savedClassic,
           builder: (context, snap) {
             final saved = snap.data;
@@ -352,7 +431,7 @@ class _ModeActions extends StatelessWidget {
                   label: 'CONTINUE',
                   subtitle: saved == null
                       ? null
-                      : 'Score ${NumberFormat('#,###').format(saved.score)} · ${saved.movesMade} moves',
+                      : 'Best ${NumberFormat('#,###').format(saved.best)}',
                   leading: const Icon(Icons.play_arrow_rounded),
                   onTap: onContinueClassic,
                 ),

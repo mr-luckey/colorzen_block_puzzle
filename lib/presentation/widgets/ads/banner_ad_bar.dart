@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'package:colorzen_block_puzzle/core/constants/admob_constants.dart';
+import 'package:colorzen_block_puzzle/services/ad_unit_memory.dart';
 
-/// Adaptive banner using Google test unit IDs (no setState).
+/// Adaptive banner: tries up to 5 unit IDs one-by-one until one loads.
+/// Remembers the last working ID and tries it first next time.
 class BannerAdBar extends StatefulWidget {
   const BannerAdBar({
     super.key,
@@ -44,41 +48,66 @@ class _BannerAdBarState extends State<BannerAdBar> {
   }
 
   Future<void> _load() async {
-    if (widget.adsRemoved || _loading) return;
+    if (widget.adsRemoved || _loading || _ad.value != null) return;
     _loading = true;
+    _failed.value = false;
     final width = MediaQuery.sizeOf(context).width.truncate();
     try {
       final size =
           await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(
         width,
       );
-      if (size == null) {
+      if (size == null || !mounted) {
         _failed.value = true;
         _loading = false;
         return;
       }
-      final banner = BannerAd(
-        size: size,
-        adUnitId: AdMobConstants.bannerId,
-        request: const AdRequest(),
-        listener: BannerAdListener(
-          onAdLoaded: (ad) {
-            _ad.value = ad as BannerAd;
-            _loading = false;
-          },
-          onAdFailedToLoad: (ad, _) {
-            ad.dispose();
-            _ad.value = null;
-            _failed.value = true;
-            _loading = false;
-          },
-        ),
-      );
-      await banner.load();
+
+      final ids = AdUnitMemory.bannerOrder(AdMobConstants.bannerIds);
+      for (final id in ids) {
+        if (!mounted || widget.adsRemoved || _ad.value != null) break;
+
+        final completer = Completer<BannerAd?>();
+        final banner = BannerAd(
+          size: size,
+          adUnitId: id,
+          request: const AdRequest(),
+          listener: BannerAdListener(
+            onAdLoaded: (ad) {
+              if (!completer.isCompleted) completer.complete(ad as BannerAd);
+            },
+            onAdFailedToLoad: (ad, _) {
+              ad.dispose();
+              if (!completer.isCompleted) completer.complete(null);
+            },
+          ),
+        );
+        try {
+          await banner.load();
+        } catch (_) {
+          banner.dispose();
+          if (!completer.isCompleted) completer.complete(null);
+        }
+
+        final loaded = await completer.future;
+        if (loaded != null) {
+          if (!mounted || widget.adsRemoved) {
+            loaded.dispose();
+            break;
+          }
+          // ignore: discarded_futures
+          AdUnitMemory.rememberBanner(id);
+          _ad.value = loaded;
+          _loading = false;
+          return;
+        }
+      }
+
+      _failed.value = true;
     } catch (_) {
       _failed.value = true;
-      _loading = false;
     }
+    _loading = false;
   }
 
   void _disposeAd() {

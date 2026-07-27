@@ -1,0 +1,194 @@
+PRIVACY POLICY
+ColorZen: Block Puzzle
+Last updated: July 25, 2026
+
+This Privacy Policy explains how AppWareTech ("we", "us", or "our") collects, uses, and shares information in connection with the mobile application ColorZen: Block Puzzle (the "App"), package name: com.appwaretech.colorzen.puzzle.
+
+By downloading or using the App, you agree to this Privacy Policy. If you do not agree, please do not use the App.
+
+
+1. WHO WE ARE
+
+Developer / Publisher: AppWareTech
+App name: ColorZen: Block Puzzle
+Platform: Google Play (Android)
+
+Contact for privacy questions:
+Email: contact@appwaretech.com
+
+
+2. SUMMARY (GOOGLE PLAY DATA SAFETY STYLE)
+
+We do not require you to create an account.
+We do not sell your personal information.
+We do not operate an online store or shopping cart in the App.
+We do not operate our own backend servers that receive your gameplay data in the current version of the App.
+
+Data that may be processed:
+- Local game data stored only on your device (scores, progress, settings)
+- Advertising-related data processed by Google AdMob (and its partners)
+
+Approximate age suitability: the App is a casual puzzle game. Advertising partners may collect data used for personalized ads unless limited by your device settings, regional consent requirements, or Google Play / AdMob configurations.
+
+
+3. INFORMATION WE COLLECT
+
+3.1 Information stored only on your device
+The App uses local storage (Hive) on your device to save:
+- Game progress and saved sessions (Classic / Daily / Zen)
+- Scores, best scores, and ranking history
+- Settings (for example: sound, music, haptics, theme)
+- Daily challenge progress for the current day
+
+This information stays on your device. In the current version, we do not transmit this local gameplay data to AppWareTech servers.
+
+3.2 Information we do NOT collect ourselves
+We do not intentionally collect:
+- Name, email address, phone number, or postal address (unless you email us for support)
+- Precise location
+- Contacts, photos, camera, microphone, or SMS content
+- Government ID or payment / financial details
+- Account login credentials (the App has no user accounts)
+
+3.3 Information collected by third parties
+When you use the App, certain third-party services may automatically collect information as described in their own policies:
+
+A) Google AdMob (advertising)
+The App shows ads (banner, interstitial, and/or rewarded) using Google Mobile Ads / AdMob.
+
+AdMob and its partners may collect and process information such as:
+- Advertising ID / device identifiers
+- IP address
+- Device and app information (device model, OS version, app version, language, and similar technical data)
+- Ad interaction data (views, clicks, impressions)
+- Approximate location derived from IP address (not precise GPS from our App)
+- Diagnostic / crash-related technical signals used to deliver and measure ads
+
+This data may be used to show ads, measure performance, prevent fraud, and (where allowed) personalize advertising.
+
+Google AdMob Privacy / Advertising information:
+https://policies.google.com/privacy
+https://support.google.com/admob/answer/6128543
+
+B) Google Fonts / network requests
+The App may load fonts or other resources over the internet. When that happens, technical request data (such as IP address) may be processed by the font/content provider according to their policies.
+
+C) Sharing features
+If you use share features, content you choose to share is handled by the system share sheet and the destination app you select (for example messaging or social apps). Those apps have their own privacy policies.
+
+
+4. HOW WE USE INFORMATION
+
+We use information as follows:
+- To provide core App functionality (save progress, scores, settings)
+- To display ads and support free use of the App (via AdMob)
+- To improve stability and user experience
+- To respond to support requests if you contact us by email
+- To comply with legal obligations
+
+
+5. LEGAL BASES (WHERE APPLICABLE)
+
+Depending on your region (for example EEA/UK), processing may rely on:
+- Performance of a contract (providing the App features you request)
+- Legitimate interests (App security, fraud prevention, basic analytics for ads measurement by partners)
+- Consent (for personalized advertising / certain cookies or identifiers where required by law or platform policy)
+- Legal obligation
+
+
+6. CHILDREN'S PRIVACY
+
+The App is a casual puzzle game and is not directed at children under 13 (or the minimum age required in your country).
+
+We do not knowingly collect personal information from children. If you believe a child has provided personal information to us through support email, contact us and we will delete it where appropriate.
+
+Important for Google Play / AdMob:
+If you configure the App as designed for children, or treat users as children under applicable rules, you must use child-directed / restricted advertising settings in AdMob and Google Play. This policy assumes a general audience unless you change that declaration in Play Console.
+
+
+7. DATA SHARING
+
+We do not sell your personal information.
+
+We may share information only as follows:
+- With service providers / SDKs necessary to run the App (especially Google AdMob)
+- If required by law, legal process, or to protect rights, safety, and security
+- In connection with a business transfer (merger, acquisition, or asset sale), if applicable in the future
+
+We do not operate a social login or cloud sync account system in the current version.
+
+
+8. DATA RETENTION
+
+- Local game data remains on your device until you clear the App data, uninstall the App, or reset progress inside the App (if available).
+- Ad-related data is retained by Google / advertising partners according to their policies.
+- Support emails you send us are kept only as long as needed to respond and for legitimate business/legal records.
+
+
+9. YOUR CHOICES AND CONTROLS
+
+You can:
+- Turn off personalized ads in your device settings (Android: Settings > Google > Ads, or Privacy / Ads settings depending on OS version)
+- Reset your advertising ID in device settings
+- Clear App storage or uninstall the App to remove local game data
+- Contact us to ask privacy-related questions
+
+If you are in the EEA, UK, or similar jurisdictions, you may have rights to access, correct, delete, restrict, or object to certain processing, and to withdraw consent where processing is based on consent. Because most App data is local or processed by Google, some requests may need to be handled through device controls or Google's tools.
+
+
+10. SECURITY
+
+We take reasonable steps to protect information. Local progress is stored on-device. However, no method of electronic storage or transmission is 100% secure. Please keep your device secure and updated.
+
+
+11. INTERNATIONAL TRANSFERS
+
+Third-party providers such as Google may process data in countries other than your own. Where required, those providers use appropriate safeguards described in their privacy policies.
+
+
+12. THIRD-PARTY LINKS AND SERVICES
+
+The App may open external links (for example store listing or policies). We are not responsible for the privacy practices of third-party websites or apps. Please read their policies.
+
+
+13. PERMISSIONS
+
+The App requests Internet access to:
+- Load advertisements
+- Load optional online resources (such as fonts)
+
+The App does not request sensitive permissions such as camera, microphone, contacts, or precise location for its core features.
+
+
+14. CHANGES TO THIS POLICY
+
+We may update this Privacy Policy from time to time. The "Last updated" date at the top will change when we do. Continued use of the App after updates means you accept the revised policy. Material changes may also be noted in the App store listing or in-app notice where appropriate.
+
+
+15. CONTACT US
+
+If you have questions about this Privacy Policy or your data:
+AppWareTech
+Email: contact@appwaretech.com
+App: ColorZen: Block Puzzle
+Package: com.appwaretech.colorzen.puzzle
+
+
+16. GOOGLE PLAY CONSOLE NOTES FOR THE DEVELOPER (NOT PART OF THE PUBLIC POLICY TEXT ABOVE — FOR YOUR REFERENCE)
+
+Before publishing, do all of the following:
+1. Host this policy at a public HTTPS URL (GitHub Pages, Google Sites, your website, etc.).
+2. Add that URL in Play Console > App content > Privacy policy.
+3. Complete Data safety accurately, including:
+   - Device or other IDs collected by AdMob
+   - App activity / advertising data collected by AdMob
+   - Data shared with third parties for advertising
+   - Whether data is used for advertising or personalization
+   - Do NOT declare purchases / shopping if the published App has no paid items
+4. Declare Ads in App content / Ads declaration.
+5. Configure AdMob and UMP/consent messaging if you serve users in regions that require consent (EEA/UK and similar).
+6. If the App targets children, switch to child-directed / families policies and restricted ads; update this policy accordingly.
+7. Link this Privacy Policy from the in-app Settings screen (recommended for Play compliance).
+
+
+END OF PRIVACY POLICY

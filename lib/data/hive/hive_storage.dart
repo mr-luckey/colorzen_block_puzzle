@@ -15,6 +15,7 @@ class HiveStorage {
       Hive.openBox<Map>(HiveBoxNames.dailyChallenges),
       Hive.openBox<Map>(HiveBoxNames.lifetimeStats),
       Hive.openBox<Map>(HiveBoxNames.rankingBoard),
+      Hive.openBox(HiveBoxNames.engagement),
     ]);
   }
 

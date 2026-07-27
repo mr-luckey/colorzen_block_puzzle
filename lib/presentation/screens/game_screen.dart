@@ -581,7 +581,8 @@ class _GameViewState extends State<_GameView> {
       moves: session?.movesMade ?? 0,
     );
     if (leave && context.mounted) {
-      // Persist board / score / moves exactly where the player left.
+      // Persist board + pieces (and current run stats). On next Continue,
+      // classic score/moves reset to 0; lifetime best stays in stats.
       if (session != null && !session.isGameOver) {
         await sl<GameRepository>().saveSession(session);
       }

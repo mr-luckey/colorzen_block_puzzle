@@ -7,6 +7,7 @@ class HiveBoxNames {
   static const String dailyChallenges = 'daily_challenges';
   static const String lifetimeStats = 'lifetime_stats';
   static const String rankingBoard = 'ranking_board';
+  static const String engagement = 'engagement';
 }
 
 class HiveTypeIds {

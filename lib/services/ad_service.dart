@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:colorzen_block_puzzle/core/constants/admob_constants.dart';
 import 'package:colorzen_block_puzzle/core/constants/app_constants.dart';
+import 'package:colorzen_block_puzzle/services/ad_unit_memory.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 abstract class AdService {
@@ -15,25 +16,49 @@ abstract class AdService {
   Future<bool> showRewarded({required void Function() onEarned});
 
   /// Menu-only loop: interstitial every 20s while user is outside gameplay.
-  /// Does not change existing game interstitial cooldown behavior.
   void setMenuAdsActive({required bool active, required bool adsRemoved});
 
   /// Hard lock: while true, menu interstitial never shows (even if Home rebuilds).
   void setInGameplay(bool inGameplay);
 }
 
+enum _FsKind { none, interstitial, rewarded }
+
+/// 5-ID waterfall per type, remembers last working unit, one fullscreen at a time.
+///
+/// Rules:
+/// - Try unit IDs one-by-one until one loads, then stop (never parallel load).
+/// - Never present 2 interstitials or 2 rewardeds (or mixed) together.
+/// - After user closes/cancels a fullscreen ad, block the next one briefly
+///   so cancel ≠ instant next ad.
 class AdMobService implements AdService {
   InterstitialAd? _interstitial;
   RewardedAd? _rewarded;
+
   DateTime? _lastInterstitialShown;
+  DateTime? _lastFullscreenClosedAt;
+
   bool _initialized = false;
 
   Timer? _menuTimer;
   bool _menuAdsActive = false;
   bool _adsRemoved = false;
-  bool _showingMenuAd = false;
-  /// Blocks menu interstitials during an active game (Home stays under the route).
   bool _inGameplay = false;
+
+  _FsKind _active = _FsKind.none;
+  bool _loadingInterstitial = false;
+  bool _loadingRewarded = false;
+
+  /// After any fullscreen dismiss/cancel/fail — no new fullscreen for this window.
+  static const _afterCloseCooldown = Duration(seconds: 5);
+
+  bool get _fullscreenBusy => _active != _FsKind.none;
+
+  bool get _inAfterCloseCooldown {
+    final t = _lastFullscreenClosedAt;
+    if (t == null) return false;
+    return DateTime.now().difference(t) < _afterCloseCooldown;
+  }
 
   @override
   Future<void> init() async {
@@ -48,28 +73,112 @@ class AdMobService implements AdService {
     }
   }
 
-  @override
-  Future<void> loadInterstitial() async {
+  void _markClosed() {
+    _active = _FsKind.none;
+    _lastFullscreenClosedAt = DateTime.now();
+  }
+
+  // ─── Waterfall load (preferred ID first; stop on first success) ───
+
+  Future<InterstitialAd?> _fetchInterstitial() async {
+    if (_loadingInterstitial) return _interstitial;
+    if (_interstitial != null) return _interstitial;
+    _loadingInterstitial = true;
     try {
-      await InterstitialAd.load(
-        adUnitId: AdMobConstants.interstitialId,
-        request: const AdRequest(),
-        adLoadCallback: InterstitialAdLoadCallback(
-          onAdLoaded: (ad) => _interstitial = ad,
-          onAdFailedToLoad: (_) => _interstitial = null,
-        ),
-      );
-    } catch (_) {
-      _interstitial = null;
+      final ids = AdUnitMemory.interstitialOrder(AdMobConstants.interstitialIds);
+      for (final id in ids) {
+        if (_interstitial != null) return _interstitial;
+        final completer = Completer<InterstitialAd?>();
+        try {
+          await InterstitialAd.load(
+            adUnitId: id,
+            request: const AdRequest(),
+            adLoadCallback: InterstitialAdLoadCallback(
+              onAdLoaded: (ad) {
+                if (!completer.isCompleted) completer.complete(ad);
+              },
+              onAdFailedToLoad: (_) {
+                if (!completer.isCompleted) completer.complete(null);
+              },
+            ),
+          );
+        } catch (_) {
+          if (!completer.isCompleted) completer.complete(null);
+        }
+        final ad = await completer.future;
+        if (ad != null) {
+          _interstitial = ad;
+          // ignore: discarded_futures
+          AdUnitMemory.rememberInterstitial(id);
+          return ad;
+        }
+      }
+      return null;
+    } finally {
+      _loadingInterstitial = false;
     }
   }
+
+  Future<RewardedAd?> _fetchRewarded() async {
+    if (_loadingRewarded) return _rewarded;
+    if (_rewarded != null) return _rewarded;
+    _loadingRewarded = true;
+    try {
+      final ids = AdUnitMemory.rewardedOrder(AdMobConstants.rewardedIds);
+      for (final id in ids) {
+        if (_rewarded != null) return _rewarded;
+        final completer = Completer<RewardedAd?>();
+        try {
+          await RewardedAd.load(
+            adUnitId: id,
+            request: const AdRequest(),
+            rewardedAdLoadCallback: RewardedAdLoadCallback(
+              onAdLoaded: (ad) {
+                if (!completer.isCompleted) completer.complete(ad);
+              },
+              onAdFailedToLoad: (_) {
+                if (!completer.isCompleted) completer.complete(null);
+              },
+            ),
+          );
+        } catch (_) {
+          if (!completer.isCompleted) completer.complete(null);
+        }
+        final ad = await completer.future;
+        if (ad != null) {
+          _rewarded = ad;
+          // ignore: discarded_futures
+          AdUnitMemory.rememberRewarded(id);
+          return ad;
+        }
+      }
+      return null;
+    } finally {
+      _loadingRewarded = false;
+    }
+  }
+
+  @override
+  Future<void> loadInterstitial() async {
+    await _fetchInterstitial();
+  }
+
+  @override
+  Future<void> loadRewarded() async {
+    await _fetchRewarded();
+  }
+
+  // ─── Show (single gate) ───
 
   @override
   Future<bool> showInterstitial({
     required bool adsRemoved,
     bool ignoreCooldown = false,
   }) async {
-    if (adsRemoved) return false;
+    if (adsRemoved || _fullscreenBusy || _inAfterCloseCooldown) {
+      return false;
+    }
+
     final last = _lastInterstitialShown;
     if (!ignoreCooldown &&
         last != null &&
@@ -77,83 +186,114 @@ class AdMobService implements AdService {
             AppConstants.interstitialCooldownMs) {
       return false;
     }
-    final ad = _interstitial;
-    if (ad == null) {
-      await loadInterstitial();
-      return false;
-    }
-    _interstitial = null;
-    _lastInterstitialShown = DateTime.now();
-    ad.fullScreenContentCallback = FullScreenContentCallback(
-      onAdDismissedFullScreenContent: (ad) {
-        ad.dispose();
-        loadInterstitial();
-      },
-      onAdFailedToShowFullScreenContent: (ad, _) {
-        ad.dispose();
-        loadInterstitial();
-      },
-    );
-    await ad.show();
-    // Preload next immediately after show starts
-    loadInterstitial();
-    return true;
-  }
 
-  @override
-  Future<void> loadRewarded() async {
+    // Claim gate BEFORE awaits — blocks parallel interstitial/rewarded.
+    _active = _FsKind.interstitial;
+
     try {
-      await RewardedAd.load(
-        adUnitId: AdMobConstants.rewardedId,
-        request: const AdRequest(),
-        rewardedAdLoadCallback: RewardedAdLoadCallback(
-          onAdLoaded: (ad) => _rewarded = ad,
-          onAdFailedToLoad: (_) => _rewarded = null,
-        ),
+      final ad = _interstitial ?? await _fetchInterstitial();
+
+      if (ad == null || _active != _FsKind.interstitial) {
+        if (_active == _FsKind.interstitial) _active = _FsKind.none;
+        return false;
+      }
+
+      // Detach cached instance so nothing else can show the same ad.
+      _interstitial = null;
+      _lastInterstitialShown = DateTime.now();
+
+      final done = Completer<bool>();
+      ad.fullScreenContentCallback = FullScreenContentCallback(
+        onAdDismissedFullScreenContent: (shown) {
+          shown.dispose();
+          _markClosed();
+          // Prefetch only — never auto-show after dismiss/cancel.
+          loadInterstitial();
+          if (!done.isCompleted) done.complete(true);
+        },
+        onAdFailedToShowFullScreenContent: (shown, _) {
+          shown.dispose();
+          _markClosed();
+          loadInterstitial();
+          if (!done.isCompleted) done.complete(false);
+        },
       );
+
+      try {
+        await ad.show();
+      } catch (_) {
+        ad.dispose();
+        _markClosed();
+        loadInterstitial();
+        if (!done.isCompleted) done.complete(false);
+        return false;
+      }
+      return done.future;
     } catch (_) {
-      _rewarded = null;
+      if (_active == _FsKind.interstitial) _markClosed();
+      loadInterstitial();
+      return false;
     }
   }
 
   @override
   Future<bool> showRewarded({required void Function() onEarned}) async {
-    final ad = _rewarded;
-    if (ad == null) {
-      await loadRewarded();
-      return false;
-    }
-    _rewarded = null;
-    var earned = false;
-    // ad.show() resolves when the ad is presented, not when it closes.
-    // Wait for dismiss/fail so onUserEarnedReward can set [earned] first.
-    final done = Completer<bool>();
-    ad.fullScreenContentCallback = FullScreenContentCallback(
-      onAdDismissedFullScreenContent: (ad) {
-        ad.dispose();
-        loadRewarded();
-        if (!done.isCompleted) done.complete(earned);
-      },
-      onAdFailedToShowFullScreenContent: (ad, _) {
-        ad.dispose();
-        loadRewarded();
-        if (!done.isCompleted) done.complete(false);
-      },
-    );
+    // Never stack with interstitial / another rewarded; never right after cancel.
+    if (_fullscreenBusy || _inAfterCloseCooldown) return false;
+
+    _active = _FsKind.rewarded;
+
     try {
-      await ad.show(
-        onUserEarnedReward: (_, __) {
-          earned = true;
-          onEarned();
+      final ad = _rewarded ?? await _fetchRewarded();
+
+      if (ad == null || _active != _FsKind.rewarded) {
+        if (_active == _FsKind.rewarded) _active = _FsKind.none;
+        return false;
+      }
+
+      _rewarded = null;
+      var earned = false;
+      final done = Completer<bool>();
+
+      ad.fullScreenContentCallback = FullScreenContentCallback(
+        onAdDismissedFullScreenContent: (shown) {
+          shown.dispose();
+          _markClosed();
+          // Load next in background — do NOT present it.
+          loadRewarded();
+          if (!done.isCompleted) done.complete(earned);
+        },
+        onAdFailedToShowFullScreenContent: (shown, _) {
+          shown.dispose();
+          _markClosed();
+          loadRewarded();
+          if (!done.isCompleted) done.complete(false);
         },
       );
+
+      try {
+        await ad.show(
+          onUserEarnedReward: (_, _) {
+            earned = true;
+            onEarned();
+          },
+        );
+      } catch (_) {
+        ad.dispose();
+        _markClosed();
+        loadRewarded();
+        if (!done.isCompleted) done.complete(false);
+        return false;
+      }
+      return done.future;
     } catch (_) {
+      if (_active == _FsKind.rewarded) _markClosed();
       loadRewarded();
-      if (!done.isCompleted) done.complete(false);
       return false;
     }
-    return done.future;
   }
+
+  // ─── Menu interstitial loop ───
 
   @override
   void setMenuAdsActive({required bool active, required bool adsRemoved}) {
@@ -188,42 +328,14 @@ class AdMobService implements AdService {
   }
 
   Future<void> _tickMenuInterstitial() async {
-    if (!_menuAdsActive || _adsRemoved || _showingMenuAd || _inGameplay) {
+    if (!_menuAdsActive ||
+        _adsRemoved ||
+        _inGameplay ||
+        _fullscreenBusy ||
+        _inAfterCloseCooldown) {
       return;
     }
-    final ad = _interstitial;
-    if (ad == null) {
-      await loadInterstitial();
-      return;
-    }
-    // Re-check after any await / race with GameScreen open.
-    if (!_menuAdsActive || _adsRemoved || _inGameplay) return;
-    _showingMenuAd = true;
-    _interstitial = null;
-    // Menu loop uses its own cadence — do not touch game cooldown stamp.
-    ad.fullScreenContentCallback = FullScreenContentCallback(
-      onAdDismissedFullScreenContent: (ad) {
-        ad.dispose();
-        _showingMenuAd = false;
-        loadInterstitial();
-      },
-      onAdFailedToShowFullScreenContent: (ad, _) {
-        ad.dispose();
-        _showingMenuAd = false;
-        loadInterstitial();
-      },
-    );
-    try {
-      if (_inGameplay || !_menuAdsActive || _adsRemoved) {
-        _showingMenuAd = false;
-        _interstitial ??= ad;
-        return;
-      }
-      await ad.show();
-      loadInterstitial();
-    } catch (_) {
-      _showingMenuAd = false;
-      await loadInterstitial();
-    }
+    // Same gated path as game interstitials — cannot overlap rewarded.
+    await showInterstitial(adsRemoved: _adsRemoved, ignoreCooldown: true);
   }
 }

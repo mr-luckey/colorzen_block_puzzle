@@ -215,15 +215,33 @@ class GameBloc extends Bloc<GameEvent, GameState> {
 
     late final GameSession session;
     if (saved != null) {
-      // Continue: restore board, pieces, score, moves exactly as left.
+      // Fold any leftover run score into lifetime best before resetting.
       final best = [
         lifetimeBest,
         saved.bestScore,
         saved.score,
       ].reduce((a, b) => a > b ? a : b);
-      session = _normalizeBelt(saved.copyWith(bestScore: best));
       if (event.mode != GameMode.zen && best > lifetimeBest) {
         await _persistLifetimeBest(event.mode, best);
+      }
+
+      if (event.mode == GameMode.classic) {
+        // Continue: keep board + pieces; score/moves always restart at 0.
+        // BEST HUD shows all-time high.
+        session = _normalizeBelt(
+          saved.copyWith(
+            score: 0,
+            movesMade: 0,
+            bestScore: best,
+            comboCount: 0,
+            consecutiveClearMoves: 0,
+            activeSurviveMs: 0,
+            clearLastMove: true,
+          ),
+        );
+      } else {
+        // Daily / other: restore full run progress.
+        session = _normalizeBelt(saved.copyWith(bestScore: best));
       }
     } else {
       // Fresh run: score + moves start at 0; best shows all-time high.
