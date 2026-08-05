@@ -18,6 +18,7 @@ import 'package:colorzen_block_puzzle/domain/engines/ranking_engine.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/daily/daily_challenge_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/game/game_bloc.dart';
+import 'package:colorzen_block_puzzle/presentation/bloc/home/game_over_bonus_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/settings/settings_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/theme/theme_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/ads/banner_ad_bar.dart';
@@ -161,6 +162,7 @@ class _GameViewState extends State<_GameView> {
                   !listEquals(prev.clearedRows, next.clearedRows) ||
                   !listEquals(prev.clearedCols, next.clearedCols) ||
                   !listEquals(prev.blastCells, next.blastCells) ||
+                  prev.clearFxColors != next.clearFxColors ||
                   !listEquals(
                     prev.placementAnimCells,
                     next.placementAnimCells,
@@ -223,7 +225,10 @@ class _GameViewState extends State<_GameView> {
               _pushFx((f) {
                 var next = f.copyWith(
                   showCombo: state.showCombo,
-                  showBurst: cleared && !state.boardNuked,
+                  showBurst: cleared &&
+                      !state.boardNuked &&
+                      state.blastCells.isEmpty,
+                  showBlast: state.blastCells.isNotEmpty && !state.boardNuked,
                 );
                 if (state.lastScoreGained > 0) {
                   next = next.copyWith(floatingScore: state.lastScoreGained);
@@ -239,13 +244,14 @@ class _GameViewState extends State<_GameView> {
                 }
                 return next;
               });
-              Future<void>.delayed(450.ms, () {
+              Future<void>.delayed(650.ms, () {
                 if (mounted) {
                   _pushFx(
                     (f) => f.copyWith(
                       clearFloating: true,
                       showCombo: false,
                       showBurst: false,
+                      showBlast: false,
                       praise: MovePraise.none,
                     ),
                   );
@@ -335,15 +341,32 @@ class _GameViewState extends State<_GameView> {
                                 Align(
                                   alignment: const Alignment(0, -0.05),
                                   child: SizedBox(
-                                    width: 220,
-                                    height: 220,
+                                    width: 260,
+                                    height: 260,
                                     child: ClearBurst(
                                       seed: fx.burstSeed,
+                                      intense: true,
                                       colors: [
                                         palette.comboGold,
                                         palette.accentPrimary,
                                         palette.accentSecondary,
                                         ...palette.blocks.take(3),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              if (fx.showBlast)
+                                Align(
+                                  alignment: const Alignment(0, -0.05),
+                                  child: SizedBox(
+                                    width: 280,
+                                    height: 280,
+                                    child: BlastBurst(
+                                      seed: fx.burstSeed,
+                                      colors: [
+                                        palette.accentPrimary,
+                                        palette.comboGold,
+                                        ...palette.blocks.take(2),
                                       ],
                                     ),
                                   ),
@@ -538,6 +561,7 @@ class _GameViewState extends State<_GameView> {
                         clearedCols: state.clearedCols,
                         placementCells: state.placementAnimCells,
                         blastCells: state.blastCells,
+                        clearFxColors: state.clearFxColors,
                         timeBomb: session.timeBomb,
                       ),
                     );
@@ -599,9 +623,6 @@ class _GameViewState extends State<_GameView> {
     GameOverState state,
     ColorPalette palette,
   ) async {
-    var bonusClaimed = false;
-    var displayScore = state.session.score;
-
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -609,100 +630,104 @@ class _GameViewState extends State<_GameView> {
       enableDrag: false,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Container(
-            color: Colors.black54,
-            child: Center(
-              child: StatefulBuilder(
-                builder: (ctx, setSheet) {
-                  return _GameOverCard(
-                        session: state.session,
-                        displayScore: displayScore,
-                        isNewBest:
-                            state.isNewBest ||
-                            (displayScore > state.session.bestScore &&
-                                state.session.mode != GameMode.zen),
-                        palette: palette,
-                        bonusClaimed: bonusClaimed,
-                        onWatchBonus: state.session.mode == GameMode.zen
-                            ? null
-                            : () async {
-                                if (bonusClaimed) return;
-                                final ok = await sl<AdService>().showRewarded(
-                                  onEarned: () {},
-                                );
-                                if (!ctx.mounted) return;
-                                if (!ok) {
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Rewarded ad not ready. Try again shortly.',
+        return BlocProvider(
+          create: (_) => GameOverBonusCubit(state.session.score),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: Container(
+              color: Colors.black54,
+              child: Center(
+                child: BlocBuilder<GameOverBonusCubit, GameOverBonusState>(
+                  builder: (ctx, bonus) {
+                    return _GameOverCard(
+                          session: state.session,
+                          displayScore: bonus.displayScore,
+                          isNewBest: state.isNewBest ||
+                              (bonus.displayScore > state.session.bestScore &&
+                                  state.session.mode != GameMode.zen),
+                          palette: palette,
+                          bonusClaimed: bonus.bonusClaimed,
+                          onWatchBonus: state.session.mode == GameMode.zen
+                              ? null
+                              : () async {
+                                  if (bonus.bonusClaimed) return;
+                                  final ok = await sl<AdService>().showRewarded(
+                                    onEarned: () {},
+                                  );
+                                  if (!ctx.mounted) return;
+                                  if (!ok) {
+                                    ScaffoldMessenger.of(ctx).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Rewarded ad not ready. Try again shortly.',
+                                        ),
                                       ),
-                                    ),
+                                    );
+                                    return;
+                                  }
+                                  ctx.read<GameOverBonusCubit>().claimBonus(250);
+                                  final displayScore = ctx
+                                      .read<GameOverBonusCubit>()
+                                      .state
+                                      .displayScore;
+                                  final stats =
+                                      await sl<GameRepository>().loadStats();
+                                  if (state.session.mode == GameMode.classic &&
+                                      displayScore > stats.classicBest) {
+                                    await sl<GameRepository>().saveStats(
+                                      stats.copyWith(classicBest: displayScore),
+                                    );
+                                  } else if (state.session.mode ==
+                                          GameMode.daily &&
+                                      displayScore > stats.dailyBest) {
+                                    await sl<GameRepository>().saveStats(
+                                      stats.copyWith(dailyBest: displayScore),
+                                    );
+                                  }
+                                },
+                          onPlayAgain: () async {
+                            Navigator.pop(ctx);
+                            final removed = context
+                                .read<SettingsCubit>()
+                                .state
+                                .adsRemoved;
+                            await sl<AdService>().showInterstitial(
+                              adsRemoved: removed,
+                            );
+                            if (!context.mounted) return;
+                            _gameOverShown = false;
+                            context.read<GameBloc>().add(const GameReset());
+                          },
+                          onHome: () async {
+                            Navigator.pop(ctx);
+                            final removed = context
+                                .read<SettingsCubit>()
+                                .state
+                                .adsRemoved;
+                            await sl<AdService>().showInterstitial(
+                              adsRemoved: removed,
+                            );
+                            if (context.mounted) Navigator.of(context).pop();
+                          },
+                          onShare: state.session.mode == GameMode.daily
+                              ? () async {
+                                  await sl<ShareService>().shareDailyResult(
+                                    session: state.session,
+                                    repaintKey: _shareKey,
                                   );
-                                  return;
                                 }
-                                bonusClaimed = true;
-                                displayScore += 250;
-                                final stats = await sl<GameRepository>()
-                                    .loadStats();
-                                if (state.session.mode == GameMode.classic &&
-                                    displayScore > stats.classicBest) {
-                                  await sl<GameRepository>().saveStats(
-                                    stats.copyWith(classicBest: displayScore),
-                                  );
-                                } else if (state.session.mode ==
-                                        GameMode.daily &&
-                                    displayScore > stats.dailyBest) {
-                                  await sl<GameRepository>().saveStats(
-                                    stats.copyWith(dailyBest: displayScore),
-                                  );
-                                }
-                                if (ctx.mounted) setSheet(() {});
-                              },
-                        onPlayAgain: () async {
-                          Navigator.pop(ctx);
-                          final removed = context
-                              .read<SettingsCubit>()
-                              .state
-                              .adsRemoved;
-                          await sl<AdService>().showInterstitial(
-                            adsRemoved: removed,
-                          );
-                          if (!context.mounted) return;
-                          _gameOverShown = false;
-                          context.read<GameBloc>().add(const GameReset());
-                        },
-                        onHome: () async {
-                          Navigator.pop(ctx);
-                          final removed = context
-                              .read<SettingsCubit>()
-                              .state
-                              .adsRemoved;
-                          await sl<AdService>().showInterstitial(
-                            adsRemoved: removed,
-                          );
-                          if (context.mounted) Navigator.of(context).pop();
-                        },
-                        onShare: state.session.mode == GameMode.daily
-                            ? () async {
-                                await sl<ShareService>().shareDailyResult(
-                                  session: state.session,
-                                  repaintKey: _shareKey,
-                                );
-                              }
-                            : null,
-                      )
-                      .animate()
-                      .slideY(
-                        begin: 0.35,
-                        end: 0,
-                        duration: 400.ms,
-                        curve: Curves.easeOut,
-                      )
-                      .fadeIn(duration: 280.ms);
-                },
+                              : null,
+                        )
+                        .animate()
+                        .slideY(
+                          begin: 0.35,
+                          end: 0,
+                          duration: 400.ms,
+                          curve: Curves.easeOut,
+                        )
+                        .fadeIn(duration: 280.ms);
+                  },
+                ),
               ),
             ),
           ),
@@ -710,6 +735,7 @@ class _GameViewState extends State<_GameView> {
       },
     );
   }
+
 }
 
 class _GameOverCard extends StatelessWidget {
@@ -863,6 +889,7 @@ class _GameFx {
     this.floatingScore,
     this.showCombo = false,
     this.showBurst = false,
+    this.showBlast = false,
     this.burstSeed = 0,
     this.praise = MovePraise.none,
     this.praiseKey = 0,
@@ -875,6 +902,7 @@ class _GameFx {
   final int? floatingScore;
   final bool showCombo;
   final bool showBurst;
+  final bool showBlast;
   final int burstSeed;
   final MovePraise praise;
   final int praiseKey;
@@ -888,6 +916,7 @@ class _GameFx {
     bool clearFloating = false,
     bool? showCombo,
     bool? showBurst,
+    bool? showBlast,
     int? burstSeed,
     MovePraise? praise,
     int? praiseKey,
@@ -902,6 +931,7 @@ class _GameFx {
           : (floatingScore ?? this.floatingScore),
       showCombo: showCombo ?? this.showCombo,
       showBurst: showBurst ?? this.showBurst,
+      showBlast: showBlast ?? this.showBlast,
       burstSeed: burstSeed ?? this.burstSeed,
       praise: praise ?? this.praise,
       praiseKey: praiseKey ?? this.praiseKey,

@@ -20,7 +20,8 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future<void>.delayed(1400.ms, () async {
+    // Short branded beat only — ads bootstrap happens on Home, not here.
+    Future<void>.delayed(700.ms, () async {
       await sl<AudioService>().ensureMusicPlaying();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(

@@ -48,9 +48,9 @@ Future<void> configureDependencies() async {
   // Don't rely on this alone — Android may block until UI/gesture.
   await audio.syncFromSettings(settingsCubit.state);
 
-  final ads = AdMobService();
-  await ads.init();
-  sl.registerSingleton<AdService>(ads);
+  // Register only — never await AdMob here. Offline / slow GMS was hanging
+  // native splash forever. Bootstrap after first UI frame (see HomeScreen).
+  sl.registerSingleton<AdService>(AdMobService());
 
   final iap = InAppPurchaseService();
   await iap.init(

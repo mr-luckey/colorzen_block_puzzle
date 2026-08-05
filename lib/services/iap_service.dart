@@ -19,7 +19,7 @@ class InAppPurchaseService implements IapService {
   Future<void> init({void Function(bool adsRemoved)? onAdsOwnershipChanged}) async {
     _onAdsOwnershipChanged = onAdsOwnershipChanged;
     try {
-      _available = await _iap.isAvailable();
+      _available = await _iap.isAvailable().timeout(const Duration(seconds: 3));
     } catch (_) {
       _available = false;
     }

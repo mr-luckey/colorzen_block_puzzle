@@ -207,21 +207,50 @@ class BoardNukeOverlay extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Container(color: Colors.white.withValues(alpha: 0.12))
+          Container(color: Colors.white.withValues(alpha: 0.18))
               .animate()
               .fadeIn(duration: 40.ms)
               .then()
-              .fadeOut(duration: 220.ms),
-          ...List.generate(24, (i) {
-            final angle = (i / 24) * math.pi * 2;
-            final dist = 60.0 + (i % 5) * 28;
+              .fadeOut(duration: 280.ms),
+          // Expanding shock rings
+          ...List.generate(3, (ring) {
+            return Align(
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: [
+                      const Color(0xFFE040FB),
+                      const Color(0xFF7C4DFF),
+                      Colors.white,
+                    ][ring].withValues(alpha: 0.85),
+                    width: 3,
+                  ),
+                ),
+              )
+                  .animate(delay: (ring * 50).ms)
+                  .scale(
+                    begin: const Offset(0.2, 0.2),
+                    end: Offset(6.5 + ring * 1.2, 6.5 + ring * 1.2),
+                    duration: 480.ms,
+                    curve: Curves.easeOutCubic,
+                  )
+                  .fadeOut(delay: 60.ms, duration: 320.ms),
+            );
+          }),
+          ...List.generate(32, (i) {
+            final angle = (i / 32) * math.pi * 2;
+            final dist = 70.0 + (i % 6) * 32;
             final color = [
               const Color(0xFF7C4DFF),
               const Color(0xFFE040FB),
               const Color(0xFFFF1744),
               palette.accentPrimary,
               Colors.white,
-            ][i % 5];
+              const Color(0xFFFFEA00),
+            ][i % 6];
             return Align(
               child: Transform.translate(
                 offset: Offset(
@@ -229,15 +258,15 @@ class BoardNukeOverlay extends StatelessWidget {
                   math.sin(angle) * 8,
                 ),
                 child: Container(
-                  width: 10 + (i % 3) * 4,
-                  height: 10 + (i % 3) * 4,
+                  width: 8 + (i % 4) * 4,
+                  height: 8 + (i % 4) * 4,
                   decoration: BoxDecoration(
                     color: color,
-                    borderRadius: BorderRadius.circular(3),
+                    borderRadius: BorderRadius.circular(i.isEven ? 8 : 3),
                     boxShadow: [
                       BoxShadow(
-                        color: color.withValues(alpha: 0.7),
-                        blurRadius: 8,
+                        color: color.withValues(alpha: 0.75),
+                        blurRadius: 10,
                       ),
                     ],
                   ),
@@ -249,11 +278,11 @@ class BoardNukeOverlay extends StatelessWidget {
                         math.cos(angle) * dist,
                         math.sin(angle) * dist,
                       ),
-                      duration: 320.ms,
+                      duration: 380.ms,
                       curve: Curves.easeOutCubic,
                     )
-                    .fadeOut(delay: 80.ms, duration: 200.ms)
-                    .rotate(begin: 0, end: 1.2),
+                    .fadeOut(delay: 100.ms, duration: 240.ms)
+                    .rotate(begin: 0, end: 1.4),
               ),
             );
           }),

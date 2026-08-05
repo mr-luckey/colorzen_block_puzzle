@@ -11,6 +11,7 @@ import 'package:colorzen_block_puzzle/core/theme/app_theme.dart';
 import 'package:colorzen_block_puzzle/data/repositories/game_repository.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/daily/daily_challenge_cubit.dart';
+import 'package:colorzen_block_puzzle/presentation/bloc/home/home_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/settings/settings_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/theme/theme_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/screens/game_screen.dart';
@@ -25,17 +26,27 @@ import 'package:colorzen_block_puzzle/services/haptic_service.dart';
 import 'package:colorzen_block_puzzle/services/review_service.dart';
 import 'package:colorzen_block_puzzle/services/update_service.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => HomeCubit(),
+      child: const _HomeView(),
+    );
+  }
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeView extends StatefulWidget {
+  const _HomeView();
+
+  @override
+  State<_HomeView> createState() => _HomeViewState();
+}
+
+class _HomeViewState extends State<_HomeView> {
   late final PageController _pageController;
-  int _page = 0;
-  bool _dailyLoading = false;
   bool _promptFlowRunning = false;
 
   static const _modes = [GameMode.classic, GameMode.daily, GameMode.zen];
@@ -47,7 +58,13 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final removed = context.read<SettingsCubit>().state.adsRemoved;
-      sl<AdService>().setMenuAdsActive(active: true, adsRemoved: removed);
+      final ads = sl<AdService>();
+      // Deferred ads init (after first frame) — offline-safe, non-blocking.
+      // ignore: discarded_futures
+      ads.init().then((_) {
+        if (!mounted) return;
+        ads.setMenuAdsActive(active: true, adsRemoved: removed);
+      });
       // ignore: discarded_futures
       sl<AudioService>().ensureMusicPlaying();
       // ignore: discarded_futures
@@ -123,8 +140,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  GameMode get _currentMode => _modes[_page.clamp(0, _modes.length - 1)];
-
   void _openGame(GameMode mode, {bool forceNew = false}) {
     Navigator.of(context)
         .push(
@@ -138,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
     )
         .then((_) {
       if (!mounted) return;
-      setState(() {});
+      context.read<HomeCubit>().refresh();
       // Game / interstitial can leave BGM paused — kick it on home again.
       // ignore: discarded_futures
       sl<AudioService>().ensureMusicPlaying();
@@ -149,11 +164,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _startDailyWithReward() async {
-    if (_dailyLoading) return;
-    setState(() => _dailyLoading = true);
+    final home = context.read<HomeCubit>();
+    if (home.state.dailyLoading) return;
+    home.setDailyLoading(true);
     final ok = await sl<AdService>().showRewarded(onEarned: () {});
     if (!mounted) return;
-    setState(() => _dailyLoading = false);
+    home.setDailyLoading(false);
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -210,6 +226,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final palette = AppPalettes.of(themeState.selected);
     final daily = context.watch<DailyChallengeCubit>().state;
     final adsRemoved = context.watch<SettingsCubit>().state.adsRemoved;
+    final home = context.watch<HomeCubit>().state;
+    final page = home.page;
+    final currentMode = _modes[page.clamp(0, _modes.length - 1)];
 
     // Sync remove-ads without restarting an already-running menu timer.
     final ads = sl<AdService>();
@@ -240,10 +259,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       final heroHeight = cardWidth * 1.28;
 
                       Widget actions() => _ModeActions(
-                            mode: _currentMode,
+                            mode: currentMode,
                             palette: palette,
                             daily: daily,
-                            dailyLoading: _dailyLoading,
+                            dailyLoading: home.dailyLoading,
                             savedClassic: _savedClassic(),
                             onContinueClassic: () =>
                                 _openGame(GameMode.classic),
@@ -252,7 +271,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             onStartDaily: _startDailyWithReward,
                             onPlayZen: () => _openGame(GameMode.zen),
                           )
-                              .animate(key: ValueKey(_currentMode))
+                              .animate(key: ValueKey(currentMode))
                               .fadeIn(duration: 220.ms)
                               .slideY(begin: 0.08, end: 0);
 
@@ -286,12 +305,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               controller: _pageController,
                               itemCount: _modes.length,
                               onPageChanged: (i) {
-                                setState(() => _page = i);
+                                context.read<HomeCubit>().setPage(i);
                                 sl<HapticService>().selection();
                               },
                               itemBuilder: (context, index) {
                                 final mode = _modes[index];
-                                final active = index == _page;
+                                final active = index == page;
                                 return AnimatedScale(
                                   scale: active ? 1.0 : 0.94,
                                   duration: const Duration(milliseconds: 220),
@@ -316,22 +335,22 @@ class _HomeScreenState extends State<HomeScreen> {
                               },
                             ),
                             // No left arrow on the first card.
-                            if (_page > 0)
+                            if (page > 0)
                               Positioned(
                                 left: 0,
                                 child: _IosChevron(
                                   direction: AxisDirection.left,
                                   palette: palette,
-                                  onTap: () => _goTo(_page - 1),
+                                  onTap: () => _goTo(page - 1),
                                 ),
                               ),
-                            if (_page < _modes.length - 1)
+                            if (page < _modes.length - 1)
                               Positioned(
                                 right: 0,
                                 child: _IosChevron(
                                   direction: AxisDirection.right,
                                   palette: palette,
-                                  onTap: () => _goTo(_page + 1),
+                                  onTap: () => _goTo(page + 1),
                                 ),
                               ),
                           ],
@@ -344,7 +363,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(height: 10),
                           _PageDots(
                             count: _modes.length,
-                            index: _page,
+                            index: page,
                             palette: palette,
                           ),
                           const SizedBox(height: 14),

@@ -3,7 +3,18 @@ import 'package:flutter/widgets.dart';
 
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 
-enum SfxType { tap, pickup, place, clear, combo, invalid, gameOver, tick }
+enum SfxType {
+  tap,
+  pickup,
+  place,
+  clear,
+  lineClear,
+  blast,
+  combo,
+  invalid,
+  gameOver,
+  tick,
+}
 
 abstract class AudioService {
   Future<void> init();
@@ -48,6 +59,8 @@ class AudioPlayersService implements AudioService {
     SfxType.pickup: 'audio/pickup.wav',
     SfxType.place: 'audio/place.wav',
     SfxType.clear: 'audio/clear.wav',
+    SfxType.lineClear: 'audio/line_clear.wav',
+    SfxType.blast: 'audio/blast.wav',
     SfxType.combo: 'audio/combo.wav',
     SfxType.invalid: 'audio/invalid.wav',
     SfxType.gameOver: 'audio/clear.wav',
@@ -75,7 +88,7 @@ class AudioPlayersService implements AudioService {
     try {
       await AudioPlayer.global.setAudioContext(_mixCtx);
 
-      for (var i = 0; i < 3; i++) {
+      for (var i = 0; i < 5; i++) {
         final p = AudioPlayer();
         await p.setAudioContext(_mixCtx);
         await p.setPlayerMode(PlayerMode.lowLatency);
@@ -131,7 +144,13 @@ class AudioPlayersService implements AudioService {
       await player.stop();
       await player.play(
         AssetSource(file),
-        volume: type == SfxType.tick ? 0.55 : 0.95,
+        volume: switch (type) {
+          SfxType.tick => 0.55,
+          SfxType.lineClear => 1.0,
+          SfxType.blast => 1.0,
+          SfxType.combo => 0.95,
+          _ => 0.9,
+        },
       );
       // Soft nudge if BGM dropped — don't await so SFX stays snappy.
       if (_wantMusic &&

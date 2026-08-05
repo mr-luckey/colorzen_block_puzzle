@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "9935302874",
+    "project_id": "color-zee-block",
+    "storage_bucket": "color-zee-block.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:9935302874:android:03306ceeb26f92517c35e3",
+        "android_client_info": {
+          "package_name": "com.appwaretech.colorzen.puzzle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAHc57XC_Y0TQduszaRinU527oSv1TAqEI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

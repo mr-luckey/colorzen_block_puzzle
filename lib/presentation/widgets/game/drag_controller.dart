@@ -24,10 +24,10 @@ class PieceDragController {
   int? trayIndex;
   bool get isDragging => piece.value != null;
 
-  /// Piece floats above the finger (classic puzzle feel).
-  static const double fingerLift = 72;
-  /// Visual scale while dragging (tray stays small; board snap stays 1.0).
-  static const double pickupScale = 1.42;
+  /// Piece floats well above the finger so the board ghost stays visible.
+  static const double fingerLift = 118;
+  /// Near board-cell size while dragging — large scale hid the drop target.
+  static const double pickupScale = 1.08;
 
   void start({
     required Piece p,
@@ -333,7 +333,8 @@ class _FloatingPiece extends StatelessWidget {
     final cell = math.max(12.0, BoardSnap.cell);
     final scale = PieceDragController.pickupScale;
 
-    // Bigger visual on pickup; ghost math still uses BoardSnap (unscaled).
+    // Scale from bottom so any growth goes UP — board under the finger stays clear.
+    // Ghost math still uses BoardSnap (unscaled).
     return IgnorePointer(
       child: Stack(
         clipBehavior: Clip.none,
@@ -345,7 +346,7 @@ class _FloatingPiece extends StatelessWidget {
             height: size.height,
             child: Transform.scale(
               scale: scale,
-              alignment: Alignment.center,
+              alignment: Alignment.bottomCenter,
               child: PiecePreview(
                 piece: piece,
                 palette: palette,

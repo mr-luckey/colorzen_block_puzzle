@@ -83,6 +83,7 @@ class GamePlaying extends GameState {
     this.showCombo = false,
     this.placementAnimCells = const [],
     this.blastCells = const [],
+    this.clearFxColors = const {},
     this.praise = MovePraise.none,
     this.bombSpawned = false,
     this.boardNuked = false,
@@ -98,6 +99,8 @@ class GamePlaying extends GameState {
   final List<(int, int)> placementAnimCells;
   /// Cells removed by a conveyor bomb area blast.
   final List<(int, int)> blastCells;
+  /// Colors to paint during clear/blast anim (grid is already emptied).
+  final Map<(int, int), BlockColor> clearFxColors;
   final MovePraise praise;
   final bool bombSpawned;
   final bool boardNuked;
@@ -113,6 +116,7 @@ class GamePlaying extends GameState {
         showCombo,
         placementAnimCells,
         blastCells,
+        clearFxColors,
         praise,
         bombSpawned,
         boardNuked,
@@ -261,15 +265,17 @@ class GameBloc extends Bloc<GameEvent, GameState> {
   }
 
   GameSession _createNewSession(GameMode mode, int best) {
-    var belt = _pieceGen.generateSet(count: AppConstants.beltSize);
-    // Zen: calm endless play — no bombs on the conveyor.
-    if (mode == GameMode.zen) {
-      belt = belt.map((p) => p.copyWith(isBomb: false)).toList();
-    }
     var grid = GameSession.emptyGrid();
     // Daily: seeded opening pattern so every player gets the same board start.
     if (mode == GameMode.daily) {
       grid = _dailyOpeningPattern();
+    }
+    _pieceGen.setBoard(grid);
+    _pieceGen.setBoardFillRatio(_countFilled(grid) / 81.0);
+    var belt = _pieceGen.generateSet(count: AppConstants.beltSize);
+    // Zen: calm endless play — no bombs on the conveyor.
+    if (mode == GameMode.zen) {
+      belt = belt.map((p) => p.copyWith(isBomb: false)).toList();
     }
     return GameSession(
       mode: mode,
@@ -310,6 +316,8 @@ class GameBloc extends Bloc<GameEvent, GameState> {
 
   /// Migrate old 3-slot + next-tray saves into an 8-piece conveyor belt.
   GameSession _normalizeBelt(GameSession session) {
+    _pieceGen.setBoard(session.grid);
+    _pieceGen.setBoardFillRatio(_countFilled(session.grid) / 81.0);
     final existing = session.currentPieces.whereType<Piece>().toList();
     final fromNext = session.nextPieces;
     final pool = [...existing, ...fromNext];
@@ -366,13 +374,31 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     final clearResult = _clearEngine.detectAndClear(placedGrid);
     final lines = clearResult.linesCleared;
 
+    // Snapshot colors for line-clear pop anim (logic grid is already empty).
+    final clearFxColors = <(int, int), BlockColor>{};
+    for (final r in clearResult.clearedRows) {
+      for (var c = 0; c < 9; c++) {
+        final color = placedGrid[r][c];
+        if (color != null) clearFxColors[(r, c)] = color;
+      }
+    }
+    for (final c in clearResult.clearedCols) {
+      for (var r = 0; r < 9; r++) {
+        final color = placedGrid[r][c];
+        if (color != null) clearFxColors[(r, c)] = color;
+      }
+    }
+
     var consecutive = session.consecutiveClearMoves;
     if (lines > 0) {
       consecutive += 1;
       _haptics.medium();
-      await _audio.playSfx(SfxType.clear);
+      // Engaging arpeggio on line clear — don't await.
+      // ignore: discarded_futures
+      _audio.playSfx(SfxType.lineClear);
       if (consecutive >= 3) {
-        await _audio.playSfx(SfxType.combo);
+        // ignore: discarded_futures
+        _audio.playSfx(SfxType.combo);
       }
     } else {
       consecutive = 0;
@@ -446,12 +472,20 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       bomb = null;
       placedBomb = null;
       _haptics.heavy();
-      await _audio.playSfx(SfxType.combo);
-      await _audio.playSfx(SfxType.clear);
+      // ignore: discarded_futures
+      _audio.playSfx(SfxType.blast);
+      // ignore: discarded_futures
+      _audio.playSfx(SfxType.combo);
 
       if (defuseTarget.isFullWipe) {
         // Combo bomb → wipe entire board.
         final filled = _countFilled(workingGrid);
+        for (var r = 0; r < 9; r++) {
+          for (var c = 0; c < 9; c++) {
+            final color = workingGrid[r][c];
+            if (color != null) clearFxColors[(r, c)] = color;
+          }
+        }
         workingGrid = GameSession.emptyGrid();
         final nukeBonus = scoringEnabled
             ? AppConstants.bombBoardClearBonus +
@@ -461,6 +495,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
         boardNuked = true;
       } else {
         // Conveyor bomb → blast a local square around the bomb cell.
+        final preBlast = workingGrid;
         final blast = _applyAreaBlast(
           workingGrid,
           defuseTarget.row,
@@ -469,6 +504,10 @@ class GameBloc extends Bloc<GameEvent, GameState> {
         );
         workingGrid = blast.grid;
         blastCells = blast.cells;
+        for (final cell in blast.cells) {
+          final color = preBlast[cell.$1][cell.$2];
+          if (color != null) clearFxColors[cell] = color;
+        }
         var areaBonus = scoringEnabled
             ? AppConstants.bombAreaClearBonus +
                 blast.removed * AppConstants.bombPerBlockBonus
@@ -477,6 +516,18 @@ class GameBloc extends Bloc<GameEvent, GameState> {
         // Cascading line clears created by the blast hole.
         final cascade = _clearEngine.detectAndClear(workingGrid);
         if (cascade.linesCleared > 0) {
+          for (final r in cascade.clearedRows) {
+            for (var c = 0; c < 9; c++) {
+              final color = workingGrid[r][c];
+              if (color != null) clearFxColors[(r, c)] = color;
+            }
+          }
+          for (final c in cascade.clearedCols) {
+            for (var r = 0; r < 9; r++) {
+              final color = workingGrid[r][c];
+              if (color != null) clearFxColors[(r, c)] = color;
+            }
+          }
           workingGrid = cascade.grid;
           if (scoringEnabled) {
             areaBonus += ScoreCalculator.calculate(
@@ -500,7 +551,8 @@ class GameBloc extends Bloc<GameEvent, GameState> {
         bomb = placedBomb;
         bombSpawned = true;
         _haptics.medium();
-        await _audio.playSfx(SfxType.pickup);
+        // ignore: discarded_futures
+        _audio.playSfx(SfxType.pickup);
       }
     }
 
@@ -519,7 +571,8 @@ class GameBloc extends Bloc<GameEvent, GameState> {
         bomb = armed;
         bombSpawned = true;
         _haptics.medium();
-        await _audio.playSfx(SfxType.pickup);
+        // ignore: discarded_futures
+        _audio.playSfx(SfxType.pickup);
       }
     }
 
@@ -528,6 +581,8 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     if (trayIndex >= 0 && trayIndex < newTray.length) {
       newTray.removeAt(trayIndex);
     }
+    _pieceGen.setBoard(workingGrid);
+    _pieceGen.setBoardFillRatio(_countFilled(workingGrid) / 81.0);
     newTray.add(_pieceGen.nextConveyorPiece());
     while (newTray.length < AppConstants.beltSize) {
       newTray.add(_pieceGen.nextConveyorPiece());
@@ -601,13 +656,14 @@ class GameBloc extends Bloc<GameEvent, GameState> {
           showCombo: consecutive >= 3 && lines > 0,
           placementAnimCells: placementCells,
           blastCells: blastCells,
+          clearFxColors: clearFxColors,
           praise: boardNuked ? MovePraise.legendary : praise,
           bombSpawned: bombSpawned,
           boardNuked: boardNuked,
           bombDefused: bombDefused,
         ),
       );
-      await Future<void>.delayed(const Duration(milliseconds: 400));
+      await Future<void>.delayed(const Duration(milliseconds: 520));
       emit(
         GameOverState(
           newSession,
@@ -618,12 +674,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       return;
     }
 
-    await _repo.saveSession(newSession);
-    if (scoringEnabled && newBest > session.bestScore) {
-      await _persistLifetimeBest(session.mode, newBest);
-    }
-    await _maybeUnlockThemes(newSession);
-
+    // Emit clear FX first — persist in background so anim isn't delayed.
     emit(
       GamePlaying(
         newSession,
@@ -638,6 +689,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
         showCombo: consecutive >= 3 && lines > 0,
         placementAnimCells: placementCells,
         blastCells: blastCells,
+        clearFxColors: clearFxColors,
         praise: boardNuked
             ? MovePraise.legendary
             : (blastCells.isNotEmpty ? MovePraise.great : praise),
@@ -647,9 +699,18 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       ),
     );
 
-    // Clear line-flash flags so empty cell backgrounds stay forever.
+    // ignore: discarded_futures
+    _repo.saveSession(newSession);
+    if (scoringEnabled && newBest > session.bestScore) {
+      // ignore: discarded_futures
+      _persistLifetimeBest(session.mode, newBest);
+    }
+    // ignore: discarded_futures
+    _maybeUnlockThemes(newSession);
+
+    // Clear line-flash flags after Block-Blast-length FX (~520ms).
     final settleMoves = movesMade;
-    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await Future<void>.delayed(const Duration(milliseconds: 520));
     final after = state;
     if (after is GamePlaying &&
         after.session.movesMade == settleMoves &&
@@ -746,6 +807,8 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       fresh = fresh.copyWith(isBomb: false);
     }
     tray.add(fresh);
+    _pieceGen.setBoard(session.grid);
+    _pieceGen.setBoardFillRatio(_countFilled(session.grid) / 81.0);
     while (tray.length < AppConstants.beltSize) {
       tray.add(_pieceGen.nextConveyorPiece());
     }

@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/block_visuals.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/bomb_widgets.dart';
+import 'package:colorzen_block_puzzle/presentation/widgets/game/clear_burst.dart';
 
 /// Drag placement preview on the board.
 class GhostState {
@@ -60,14 +61,12 @@ class GridCell extends StatelessWidget {
     super.key,
     required this.size,
     this.color,
-    this.clearing = false,
     this.placing = false,
     required this.palette,
   });
 
   final double size;
   final BlockColor? color;
-  final bool clearing;
   final bool placing;
   final ColorPalette palette;
 
@@ -97,48 +96,15 @@ class GridCell extends StatelessWidget {
 
     child = SizedBox(width: s, height: s, child: child);
 
-    // Only fade filled blocks. Empty cell backgrounds must stay visible.
-    if (clearing && color != null) {
-      child = child
-          .animate()
-          .scale(
-            begin: const Offset(1, 1),
-            end: const Offset(1.12, 1.12),
-            duration: 70.ms,
-          )
-          .then()
-          .fadeOut(duration: 100.ms);
-    } else if (clearing && color == null) {
-      child = child
-          .animate()
-          .scale(
-            begin: const Offset(1, 1),
-            end: const Offset(1.05, 1.05),
-            duration: 60.ms,
-          )
-          .tint(color: palette.accentSecondary.withValues(alpha: 0.35))
-          .then()
-          .scale(
-            begin: const Offset(1.05, 1.05),
-            end: const Offset(1, 1),
-            duration: 90.ms,
-          );
-    }
-
+    // Placement pop only — clear/blast FX live in ClearFxOverlay (1 controller).
     if (placing) {
       child = child
           .animate()
           .scale(
-            begin: const Offset(0.5, 0.5),
-            end: const Offset(1.06, 1.06),
-            duration: 80.ms,
-            curve: Curves.easeOutCubic,
-          )
-          .then()
-          .scale(
-            begin: const Offset(1.06, 1.06),
+            begin: const Offset(0.55, 0.55),
             end: const Offset(1.0, 1.0),
-            duration: 50.ms,
+            duration: 90.ms,
+            curve: Curves.easeOut,
           );
     }
 
@@ -156,6 +122,7 @@ class GameGrid extends StatelessWidget {
     this.clearedCols = const [],
     this.placementCells = const [],
     this.blastCells = const [],
+    this.clearFxColors = const {},
     this.gridKey,
     this.maxWidth,
     this.timeBomb,
@@ -169,6 +136,7 @@ class GameGrid extends StatelessWidget {
   final List<int> clearedCols;
   final List<(int, int)> placementCells;
   final List<(int, int)> blastCells;
+  final Map<(int, int), BlockColor> clearFxColors;
   final GlobalKey? gridKey;
   final double? maxWidth;
   final TimeBomb? timeBomb;
@@ -237,13 +205,30 @@ class GameGrid extends StatelessWidget {
                             cell: safeCell,
                             gap: gap,
                             boardW: boardW,
-                            clearedRows: clearedRows,
-                            clearedCols: clearedCols,
                             placementCells: placementCells,
-                            blastCells: blastCells,
                             timeBomb: timeBomb,
                           ),
                         ),
+                        if (clearedRows.isNotEmpty ||
+                            clearedCols.isNotEmpty ||
+                            blastCells.isNotEmpty ||
+                            clearFxColors.isNotEmpty)
+                          ClearFxOverlay(
+                            key: ValueKey(
+                              'fx_${clearedRows.join()}_'
+                              '${clearedCols.join()}_'
+                              '${blastCells.length}_'
+                              '${clearFxColors.length}',
+                            ),
+                            clearedRows: clearedRows,
+                            clearedCols: clearedCols,
+                            blastCells: blastCells,
+                            clearFxColors: clearFxColors,
+                            cell: safeCell,
+                            gap: gap,
+                            boardW: boardW,
+                            palette: palette,
+                          ),
                         if (ghostListenable != null)
                           _GhostOverlay(
                             listenable: ghostListenable!,
@@ -272,10 +257,7 @@ class _BoardCells extends StatelessWidget {
     required this.cell,
     required this.gap,
     required this.boardW,
-    required this.clearedRows,
-    required this.clearedCols,
     required this.placementCells,
-    required this.blastCells,
     this.timeBomb,
   });
 
@@ -284,10 +266,7 @@ class _BoardCells extends StatelessWidget {
   final double cell;
   final double gap;
   final double boardW;
-  final List<int> clearedRows;
-  final List<int> clearedCols;
   final List<(int, int)> placementCells;
-  final List<(int, int)> blastCells;
   final TimeBomb? timeBomb;
 
   @override
@@ -315,9 +294,6 @@ class _BoardCells extends StatelessWidget {
                     : GridCell(
                         size: cell,
                         color: grid[r][c],
-                        clearing: clearedRows.contains(r) ||
-                            clearedCols.contains(c) ||
-                            blastCells.contains((r, c)),
                         placing: placementCells.contains((r, c)),
                         palette: palette,
                       );

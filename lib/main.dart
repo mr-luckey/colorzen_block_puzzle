@@ -1,6 +1,11 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'package:colorzen_block_puzzle/core/di/injection.dart';
 import 'package:colorzen_block_puzzle/core/theme/app_theme.dart';
@@ -10,11 +15,24 @@ import 'package:colorzen_block_puzzle/domain/models/models.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/daily/daily_challenge_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/settings/settings_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/theme/theme_cubit.dart';
+import 'package:colorzen_block_puzzle/services/ads_remote_config.dart';
 import 'package:colorzen_block_puzzle/services/audio_service.dart';
 import 'package:colorzen_block_puzzle/presentation/screens/splash_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Prefer device cache / system fallback — never block UI on font HTTP.
+  GoogleFonts.config.allowRuntimeFetching = false;
+  PlatformDispatcher.instance.onError = (error, stack) {
+    final msg = error.toString();
+    if (msg.contains('google_fonts') || msg.contains('Failed to load font')) {
+      debugPrint('Suppressed font error: $error');
+      return true;
+    }
+    return false;
+  };
+
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
@@ -24,6 +42,12 @@ Future<void> main() async {
       statusBarIconBrightness: Brightness.light,
     ),
   );
+
+  try {
+    await Firebase.initializeApp();
+  } catch (_) {}
+  // Non-blocking — in-code defaults apply until fetch succeeds / Firebase missing.
+  unawaited(AdsRemoteConfig.instance.ensureInitialized());
 
   await HiveStorage.init();
   await configureDependencies();
