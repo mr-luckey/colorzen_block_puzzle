@@ -9,6 +9,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 
 import 'package:colorzen_block_puzzle/core/constants/app_constants.dart';
+import 'package:colorzen_block_puzzle/core/config/ads_config.dart';
 import 'package:colorzen_block_puzzle/core/di/injection.dart';
 import 'package:colorzen_block_puzzle/core/theme/app_theme.dart';
 import 'package:colorzen_block_puzzle/data/repositories/game_repository.dart';
@@ -31,6 +32,7 @@ import 'package:colorzen_block_puzzle/presentation/widgets/game/game_grid.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/move_praise_banner.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/piece_tray.dart';
 import 'package:colorzen_block_puzzle/services/ad_service.dart';
+import 'package:colorzen_block_puzzle/services/analytics_service.dart';
 import 'package:colorzen_block_puzzle/services/audio_service.dart';
 import 'package:colorzen_block_puzzle/services/haptic_service.dart';
 import 'package:colorzen_block_puzzle/services/share_service.dart';
@@ -52,6 +54,7 @@ class GameScreen extends StatelessWidget {
         audio: sl<AudioService>(),
         loadTheme: () async => sl<ThemeCubit>().state,
         onThemeMaybeUnlock: (data) => sl<ThemeCubit>().applyUnlocks(data),
+        analytics: sl<AnalyticsService>(),
       )..add(GameStarted(mode, forceNew: forceNew)),
       child: _GameView(mode: mode),
     );
@@ -79,12 +82,14 @@ class _GameViewState extends State<_GameView> {
   @override
   void initState() {
     super.initState();
-    // Hard-block menu interstitials while the board is active.
-    sl<AdService>().setInGameplay(true);
-    // Keep BGM looping through the whole match.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // ignore: discarded_futures
       sl<AudioService>().ensureMusicPlaying();
+      final ads = sl<AdService>();
+      // ignore: discarded_futures
+      ads.preloadInterstitial(placement: AdsPlacements.afterSession);
+      // ignore: discarded_futures
+      ads.preloadRewarded(placement: AdsPlacements.gameOverBonus);
     });
   }
 
@@ -93,9 +98,6 @@ class _GameViewState extends State<_GameView> {
     _bombUiTimer?.cancel();
     _fx.dispose();
     _drag.dispose();
-    // Allow menu / home interstitial loop again after leaving the board.
-    sl<AdService>().setInGameplay(false);
-    // Kick BGM for whoever is underneath (home) before route finishes.
     // ignore: discarded_futures
     sl<AudioService>().ensureMusicPlaying();
     super.dispose();
@@ -262,7 +264,10 @@ class _GameViewState extends State<_GameView> {
               _gameOverShown = true;
               final removed = context.read<SettingsCubit>().state.adsRemoved;
               // Best interstitial moment: natural break after a run ends.
-              await sl<AdService>().showInterstitial(adsRemoved: removed);
+              await sl<AdService>().showInterstitial(
+                adsRemoved: removed,
+                placement: AdsPlacements.afterSession,
+              );
               if (!context.mounted) return;
               await _showGameOver(context, state, palette);
               if (context.mounted) {
@@ -444,7 +449,10 @@ class _GameViewState extends State<_GameView> {
                   ),
                 ),
               ),
-              bottomNavigationBar: BannerAdBar(adsRemoved: adsRemoved),
+              bottomNavigationBar: BannerAdBar(
+                adsRemoved: adsRemoved,
+                placement: AdsPlacements.game,
+              ),
             );
           },
         ),
@@ -609,10 +617,18 @@ class _GameViewState extends State<_GameView> {
       // classic score/moves reset to 0; lifetime best stays in stats.
       if (session != null && !session.isGameOver) {
         await sl<GameRepository>().saveSession(session);
+        sl<AnalyticsService>().logLevelAbandoned(
+          difficulty: session.mode.name,
+          source: 'exit',
+        );
       }
       if ((session?.movesMade ?? 0) >= 5) {
+        if (!context.mounted) return;
         final removed = context.read<SettingsCubit>().state.adsRemoved;
-        await sl<AdService>().showInterstitial(adsRemoved: removed);
+        await sl<AdService>().showInterstitial(
+          adsRemoved: removed,
+          placement: AdsPlacements.afterExit,
+        );
       }
       if (context.mounted) Navigator.of(context).pop();
     }
@@ -652,7 +668,18 @@ class _GameViewState extends State<_GameView> {
                               : () async {
                                   if (bonus.bonusClaimed) return;
                                   final ok = await sl<AdService>().showRewarded(
-                                    onEarned: () {},
+                                    placement: AdsPlacements.gameOverBonus,
+                                    onEarned: () {
+                                      sl<AnalyticsService>()
+                                          .logRewardedAdCompleted(
+                                        placement: AdsPlacements.gameOverBonus,
+                                        source: 'game_over',
+                                      );
+                                      sl<AnalyticsService>().logRewardClaimed(
+                                        rewardType: 'game_over_bonus',
+                                        source: 'game_over',
+                                      );
+                                    },
                                   );
                                   if (!ctx.mounted) return;
                                   if (!ok) {
@@ -687,26 +714,12 @@ class _GameViewState extends State<_GameView> {
                                 },
                           onPlayAgain: () async {
                             Navigator.pop(ctx);
-                            final removed = context
-                                .read<SettingsCubit>()
-                                .state
-                                .adsRemoved;
-                            await sl<AdService>().showInterstitial(
-                              adsRemoved: removed,
-                            );
                             if (!context.mounted) return;
                             _gameOverShown = false;
                             context.read<GameBloc>().add(const GameReset());
                           },
                           onHome: () async {
                             Navigator.pop(ctx);
-                            final removed = context
-                                .read<SettingsCubit>()
-                                .state
-                                .adsRemoved;
-                            await sl<AdService>().showInterstitial(
-                              adsRemoved: removed,
-                            );
                             if (context.mounted) Navigator.of(context).pop();
                           },
                           onShare: state.session.mode == GameMode.daily

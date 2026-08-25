@@ -8,6 +8,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:colorzen_block_puzzle/core/di/injection.dart';
+import 'package:colorzen_block_puzzle/core/navigation/app_navigator.dart';
 import 'package:colorzen_block_puzzle/core/theme/app_theme.dart';
 import 'package:colorzen_block_puzzle/data/hive/hive_storage.dart';
 import 'package:colorzen_block_puzzle/data/repositories/game_repository.dart';
@@ -16,7 +17,9 @@ import 'package:colorzen_block_puzzle/presentation/bloc/daily/daily_challenge_cu
 import 'package:colorzen_block_puzzle/presentation/bloc/settings/settings_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/bloc/theme/theme_cubit.dart';
 import 'package:colorzen_block_puzzle/services/ads_remote_config.dart';
+import 'package:colorzen_block_puzzle/services/analytics_service.dart';
 import 'package:colorzen_block_puzzle/services/audio_service.dart';
+import 'package:colorzen_block_puzzle/services/local_notification_service.dart';
 import 'package:colorzen_block_puzzle/presentation/screens/splash_screen.dart';
 
 Future<void> main() async {
@@ -52,7 +55,25 @@ Future<void> main() async {
   await HiveStorage.init();
   await configureDependencies();
 
+  unawaited(_bootstrapEngagement());
+
   runApp(const ColorZenApp());
+}
+
+/// Analytics + local notifications must never block first frame or gameplay.
+Future<void> _bootstrapEngagement() async {
+  try {
+    await sl<AnalyticsService>().init();
+  } catch (_) {}
+  try {
+    if (sl<SettingsCubit>().state.notificationsEnabled) {
+      final count = await sl<LocalNotificationService>().scheduleNotifications();
+      sl<AnalyticsService>().logNotificationScheduled(
+        count: count,
+        source: 'launch',
+      );
+    }
+  } catch (_) {}
 }
 
 class ColorZenApp extends StatelessWidget {
@@ -72,6 +93,7 @@ class ColorZenApp extends StatelessWidget {
         builder: (context, themeState) {
           final palette = AppPalettes.of(themeState.selected);
           return MaterialApp(
+            navigatorKey: appNavigatorKey,
             title: 'ColorZen',
             debugShowCheckedModeBanner: false,
             theme: ThemeData(

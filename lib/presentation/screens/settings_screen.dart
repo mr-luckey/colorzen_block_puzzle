@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:colorzen_block_puzzle/core/config/ads_config.dart';
 import 'package:colorzen_block_puzzle/core/di/injection.dart';
 import 'package:colorzen_block_puzzle/core/theme/app_theme.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
@@ -8,8 +9,10 @@ import 'package:colorzen_block_puzzle/presentation/bloc/settings/settings_cubit.
 import 'package:colorzen_block_puzzle/presentation/bloc/theme/theme_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/ads/banner_ad_bar.dart';
 import 'package:colorzen_block_puzzle/services/ad_service.dart';
+import 'package:colorzen_block_puzzle/services/analytics_service.dart';
 import 'package:colorzen_block_puzzle/services/audio_service.dart';
 import 'package:colorzen_block_puzzle/services/haptic_service.dart';
+import 'package:colorzen_block_puzzle/services/local_notification_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -124,27 +127,51 @@ class SettingsScreen extends StatelessWidget {
                           palette: palette,
                           label: 'Daily Reminder',
                           subtitle: settings.notificationsEnabled
-                              ? 'On — preference saved'
+                              ? 'On — 5 PM and 9 PM local time'
                               : 'Off',
                           value: settings.notificationsEnabled,
                           onChanged: (_) async {
-                            await context
-                                .read<SettingsCubit>()
-                                .toggleNotifications();
-                            if (!context.mounted) return;
-                            final on = context
-                                .read<SettingsCubit>()
-                                .state
-                                .notificationsEnabled;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  on
-                                      ? 'Daily reminder preference saved.'
-                                      : 'Daily reminder turned off.',
+                            final cubit = context.read<SettingsCubit>();
+                            if (!cubit.state.notificationsEnabled) {
+                              final allowed = await sl<
+                                      LocalNotificationService>()
+                                  .requestPermission();
+                              if (!context.mounted) return;
+                              if (!allowed) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Notification permission is required for daily reminders.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+                              await cubit.toggleNotifications();
+                              final count = await sl<LocalNotificationService>()
+                                  .scheduleNotifications();
+                              sl<AnalyticsService>().logNotificationScheduled(
+                                count: count,
+                                source: 'settings',
+                              );
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Daily reminders scheduled for 5 PM and 9 PM.',
+                                  ),
                                 ),
-                              ),
-                            );
+                              );
+                            } else {
+                              await cubit.toggleNotifications();
+                              await sl<LocalNotificationService>().cancelAll();
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Daily reminder turned off.'),
+                                ),
+                              );
+                            }
                           },
                         ),
                       ],
@@ -159,7 +186,10 @@ class SettingsScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              BannerAdBar(adsRemoved: settings.adsRemoved),
+              BannerAdBar(
+                adsRemoved: settings.adsRemoved,
+                placement: AdsPlacements.settings,
+              ),
             ],
           ),
         ),
@@ -257,7 +287,19 @@ class _ThemesGrid extends StatelessWidget {
           selected: selected,
           onSelect: () => context.read<ThemeCubit>().selectTheme(id),
           onUnlockAd: () async {
-            final ok = await sl<AdService>().showRewarded(onEarned: () {});
+            final ok = await sl<AdService>().showRewarded(
+              placement: AdsPlacements.themeUnlock,
+              onEarned: () {
+                sl<AnalyticsService>().logRewardedAdCompleted(
+                  placement: AdsPlacements.themeUnlock,
+                  source: 'settings',
+                );
+                sl<AnalyticsService>().logRewardClaimed(
+                  rewardType: 'theme_unlock',
+                  source: 'settings',
+                );
+              },
+            );
             if (!context.mounted) return;
             if (ok) {
               await context.read<ThemeCubit>().unlockTheme(id);

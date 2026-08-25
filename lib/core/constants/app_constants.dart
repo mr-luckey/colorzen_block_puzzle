@@ -28,8 +28,6 @@ class AppConstants {
   /// Daily challenge score multiplier (shared seeded puzzle).
   static const double dailyScoreMultiplier = 1.5;
   static const int interstitialCooldownMs = 180000;
-  /// Menu / home interstitial cadence (paused during gameplay).
-  static const int menuInterstitialEverySec = 20;
   static const int desiUnlockScore = 5000;
   static const int arcticUnlockScore = 10000;
   /// Previous free theme (Woodland) — now unlockable.

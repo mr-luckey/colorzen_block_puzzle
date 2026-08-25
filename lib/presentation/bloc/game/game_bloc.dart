@@ -9,6 +9,7 @@ import 'package:colorzen_block_puzzle/domain/engines/piece_generator.dart';
 import 'package:colorzen_block_puzzle/domain/engines/ranking_engine.dart';
 import 'package:colorzen_block_puzzle/domain/engines/score_calculator.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
+import 'package:colorzen_block_puzzle/services/analytics_service.dart';
 import 'package:colorzen_block_puzzle/services/audio_service.dart';
 import 'package:colorzen_block_puzzle/services/haptic_service.dart';
 import 'package:uuid/uuid.dart';
@@ -143,6 +144,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     required AudioService audio,
     required Future<void> Function(ThemeStateData) onThemeMaybeUnlock,
     required Future<ThemeStateData> Function() loadTheme,
+    required AnalyticsService analytics,
   })  : _repo = repo,
         _pieceGen = pieceGen,
         _clearEngine = clearEngine,
@@ -150,6 +152,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
         _audio = audio,
         _onThemeMaybeUnlock = onThemeMaybeUnlock,
         _loadTheme = loadTheme,
+        _analytics = analytics,
         super(const GameInitial()) {
     on<GameStarted>(_onStarted);
     on<PiecePlaced>(_onPiecePlaced);
@@ -165,6 +168,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
   final AudioService _audio;
   final Future<void> Function(ThemeStateData) _onThemeMaybeUnlock;
   final Future<ThemeStateData> Function() _loadTheme;
+  final AnalyticsService _analytics;
 
   GameMode? _mode;
 
@@ -254,6 +258,12 @@ class GameBloc extends Bloc<GameEvent, GameState> {
 
     await _repo.saveSession(session);
     emit(GamePlaying(session));
+    _analytics.logLevelStarted(
+      difficulty: event.mode.name,
+      source: event.forceNew
+          ? 'new'
+          : (saved != null ? 'resume' : 'new'),
+    );
   }
 
   void _configureGenerator(GameMode mode) {
@@ -671,6 +681,21 @@ class GameBloc extends Bloc<GameEvent, GameState> {
               newSession.score > 0,
         ),
       );
+      if (session.mode == GameMode.daily) {
+        _analytics.logLevelCompleted(
+          difficulty: session.mode.name,
+          moves: newSession.movesMade,
+          timeSeconds: newSession.activeSurviveSeconds,
+          source: 'game_over',
+        );
+      } else {
+        _analytics.logLevelFailed(
+          difficulty: session.mode.name,
+          moves: newSession.movesMade,
+          timeSeconds: newSession.activeSurviveSeconds,
+          source: 'game_over',
+        );
+      }
       return;
     }
 
@@ -906,5 +931,9 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     await _repo.clearSession(mode);
     await _repo.saveSession(session);
     emit(GamePlaying(session));
+    _analytics.logLevelStarted(
+      difficulty: mode.name,
+      source: 'play_again',
+    );
   }
 }

@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import 'package:colorzen_block_puzzle/core/constants/app_constants.dart';
 import 'package:colorzen_block_puzzle/core/di/injection.dart';
+import 'package:colorzen_block_puzzle/core/config/ads_config.dart';
 import 'package:colorzen_block_puzzle/core/theme/app_theme.dart';
 import 'package:colorzen_block_puzzle/data/repositories/game_repository.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
@@ -21,6 +22,7 @@ import 'package:colorzen_block_puzzle/presentation/widgets/app_button.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/review_prompt_dialog.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/update_available_dialog.dart';
 import 'package:colorzen_block_puzzle/services/ad_service.dart';
+import 'package:colorzen_block_puzzle/services/analytics_service.dart';
 import 'package:colorzen_block_puzzle/services/audio_service.dart';
 import 'package:colorzen_block_puzzle/services/haptic_service.dart';
 import 'package:colorzen_block_puzzle/services/review_service.dart';
@@ -57,13 +59,13 @@ class _HomeViewState extends State<_HomeView> {
     _pageController = PageController(viewportFraction: 1);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final removed = context.read<SettingsCubit>().state.adsRemoved;
       final ads = sl<AdService>();
       // Deferred ads init (after first frame) — offline-safe, non-blocking.
       // ignore: discarded_futures
       ads.init().then((_) {
         if (!mounted) return;
-        ads.setMenuAdsActive(active: true, adsRemoved: removed);
+        // ignore: discarded_futures
+        ads.preloadRewarded(placement: AdsPlacements.dailyChallenge);
       });
       // ignore: discarded_futures
       sl<AudioService>().ensureMusicPlaying();
@@ -167,7 +169,19 @@ class _HomeViewState extends State<_HomeView> {
     final home = context.read<HomeCubit>();
     if (home.state.dailyLoading) return;
     home.setDailyLoading(true);
-    final ok = await sl<AdService>().showRewarded(onEarned: () {});
+    final ok = await sl<AdService>().showRewarded(
+      placement: AdsPlacements.dailyChallenge,
+      onEarned: () {
+        sl<AnalyticsService>().logRewardedAdCompleted(
+          placement: AdsPlacements.dailyChallenge,
+          source: 'home',
+        );
+        sl<AnalyticsService>().logRewardClaimed(
+          rewardType: 'daily_challenge',
+          source: 'home',
+        );
+      },
+    );
     if (!mounted) return;
     home.setDailyLoading(false);
     if (!ok) {
@@ -229,10 +243,6 @@ class _HomeViewState extends State<_HomeView> {
     final home = context.watch<HomeCubit>().state;
     final page = home.page;
     final currentMode = _modes[page.clamp(0, _modes.length - 1)];
-
-    // Sync remove-ads without restarting an already-running menu timer.
-    final ads = sl<AdService>();
-    ads.setMenuAdsActive(active: true, adsRemoved: adsRemoved);
 
     final size = MediaQuery.sizeOf(context);
     final pad = (size.width * 0.05).clamp(14.0, 24.0);
@@ -405,7 +415,10 @@ class _HomeViewState extends State<_HomeView> {
                   ),
                 ),
               ),
-              BannerAdBar(adsRemoved: adsRemoved),
+              BannerAdBar(
+                adsRemoved: adsRemoved,
+                placement: AdsPlacements.home,
+              ),
             ],
           ),
         ),
