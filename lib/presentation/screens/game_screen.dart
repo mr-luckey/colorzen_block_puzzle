@@ -39,6 +39,80 @@ import 'package:colorzen_block_puzzle/services/audio_service.dart';
 import 'package:colorzen_block_puzzle/services/haptic_service.dart';
 import 'package:colorzen_block_puzzle/services/share_service.dart';
 
+/// UI-only (pause gate, score-fly hold, time-up ad busy). Gameplay stays in [GameBloc].
+class GameHudState {
+  const GameHudState({
+    this.paused = false,
+    this.heldScore,
+    this.timeUpBusy = false,
+  });
+
+  final bool paused;
+  final int? heldScore;
+  final bool timeUpBusy;
+
+  GameHudState copyWith({
+    bool? paused,
+    int? heldScore,
+    bool clearHeld = false,
+    bool? timeUpBusy,
+  }) {
+    return GameHudState(
+      paused: paused ?? this.paused,
+      heldScore: clearHeld ? null : (heldScore ?? this.heldScore),
+      timeUpBusy: timeUpBusy ?? this.timeUpBusy,
+    );
+  }
+}
+
+class GameHudCubit extends Cubit<GameHudState> {
+  GameHudCubit() : super(const GameHudState());
+
+  void setPaused(bool value) {
+    if (state.paused == value) return;
+    emit(state.copyWith(paused: value));
+  }
+
+  void holdScore(int? score) {
+    if (state.heldScore == score) return;
+    emit(state.copyWith(heldScore: score, clearHeld: score == null));
+  }
+
+  void setTimeUpBusy(bool value) {
+    if (state.timeUpBusy == value) return;
+    emit(state.copyWith(timeUpBusy: value));
+  }
+
+  void resetPlay() {
+    if (!state.paused && state.heldScore == null && !state.timeUpBusy) {
+      return;
+    }
+    emit(const GameHudState());
+  }
+}
+
+GameSession? _sessionOf(GameState state) {
+  return switch (state) {
+    GamePlaying(:final session) => session,
+    GameTimeUpState(:final session) => session,
+    GameOverState(:final session) => session,
+    _ => null,
+  };
+}
+
+bool _gridCellsChanged(
+  List<List<BlockColor?>> a,
+  List<List<BlockColor?>> b,
+) {
+  if (identical(a, b)) return false;
+  final n = a.length;
+  if (n != b.length) return true;
+  for (var r = 0; r < n; r++) {
+    if (!identical(a[r], b[r]) && !listEquals(a[r], b[r])) return true;
+  }
+  return false;
+}
+
 class GameScreen extends StatelessWidget {
   const GameScreen({super.key, required this.mode, this.forceNew = false});
 
@@ -47,16 +121,21 @@ class GameScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => GameBloc(
-        repo: sl<GameRepository>(),
-        pieceGen: sl<PieceGenerator>(),
-        clearEngine: sl<LineClearEngine>(),
-        haptics: sl<HapticService>(),
-        audio: sl<AudioService>(),
-        loadTheme: () async => sl<ThemeCubit>().state,
-        onThemeMaybeUnlock: (data) => sl<ThemeCubit>().applyUnlocks(data),
-      )..add(GameStarted(mode, forceNew: forceNew)),
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(
+          create: (_) => GameBloc(
+            repo: sl<GameRepository>(),
+            pieceGen: sl<PieceGenerator>(),
+            clearEngine: sl<LineClearEngine>(),
+            haptics: sl<HapticService>(),
+            audio: sl<AudioService>(),
+            loadTheme: () async => sl<ThemeCubit>().state,
+            onThemeMaybeUnlock: (data) => sl<ThemeCubit>().applyUnlocks(data),
+          )..add(GameStarted(mode, forceNew: forceNew)),
+        ),
+        BlocProvider(create: (_) => GameHudCubit()),
+      ],
       child: _GameView(mode: mode),
     );
   }
@@ -78,10 +157,8 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
 
   final _fx = ValueNotifier<_GameFx>(const _GameFx());
   bool _gameOverShown = false;
-  bool _paused = false;
   bool _pauseOpen = false;
   bool _leftToBackground = false;
-  int? _hudHeldScore;
   Timer? _bombUiTimer;
   TimeBomb? _trackedBomb;
 
@@ -125,7 +202,7 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
-        if (_isLivePlay || _paused) {
+        if (_isLivePlay || context.read<GameHudCubit>().state.paused) {
           _freezePlay(true);
           _leftToBackground = true;
           _persistLiveSession();
@@ -148,7 +225,9 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
   void _onReturnedToForeground() {
     if (!_leftToBackground) {
       // Notification shade / transient inactive — keep playing.
-      if (_paused && !_pauseOpen && _isLivePlay) {
+      if (context.read<GameHudCubit>().state.paused &&
+          !_pauseOpen &&
+          _isLivePlay) {
         _freezePlay(false);
       }
       return;
@@ -163,7 +242,7 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
   }
 
   void _syncBombTimer(GameSession session) {
-    if (_paused) {
+    if (context.read<GameHudCubit>().state.paused) {
       _bombUiTimer?.cancel();
       return;
     }
@@ -196,8 +275,9 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final palette = AppPalettes.of(context.watch<ThemeCubit>().state.selected);
-    final adsRemoved = context.watch<SettingsCubit>().state.adsRemoved;
+    final themeId =
+        context.select<ThemeCubit, AppThemeId>((c) => c.state.selected);
+    final palette = AppPalettes.of(themeId);
 
     return PopScope(
       canPop: false,
@@ -212,52 +292,12 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
           backgroundColor: Colors.transparent,
           body: WoodBackground(
             palette: palette,
-            themeId: context.read<ThemeCubit>().state.selected,
+            themeId: themeId,
             animated: false,
             child: SafeArea(
               bottom: false,
               child: BlocConsumer<GameBloc, GameState>(
-          buildWhen: (prev, next) {
-            if (prev is GamePlaying && next is GamePlaying) {
-              final a = prev.session;
-              final b = next.session;
-              if (a.score != b.score ||
-                  a.movesMade != b.movesMade ||
-                  a.bestScore != b.bestScore ||
-                  a.timeBomb != b.timeBomb ||
-                  a.isGameOver != b.isGameOver ||
-                  prev.lastScoreGained != next.lastScoreGained ||
-                  prev.praise != next.praise ||
-                  prev.showCombo != next.showCombo ||
-                  prev.bombSpawned != next.bombSpawned ||
-                  prev.boardNuked != next.boardNuked ||
-                  prev.allClear != next.allClear ||
-                  prev.linesJustCleared != next.linesJustCleared ||
-                  prev.hadColorBonus != next.hadColorBonus ||
-                  !listEquals(prev.clearedRows, next.clearedRows) ||
-                  !listEquals(prev.clearedCols, next.clearedCols) ||
-                  !listEquals(prev.blastCells, next.blastCells) ||
-                  prev.clearFxColors != next.clearFxColors ||
-                  !listEquals(
-                    prev.placementAnimCells,
-                    next.placementAnimCells,
-                  )) {
-                return true;
-              }
-              // Grid cell changes (placement / clear) — compare refs first.
-              if (!identical(a.grid, b.grid)) {
-                for (var r = 0; r < a.grid.length; r++) {
-                  if (!identical(a.grid[r], b.grid[r]) &&
-                      !listEquals(a.grid[r], b.grid[r])) {
-                    return true;
-                  }
-                }
-              }
-              // Conveyor-only recycle → skip full game rebuild (tray is local).
-              return false;
-            }
-            return prev.runtimeType != next.runtimeType || prev != next;
-          },
+          buildWhen: (prev, next) => prev.runtimeType != next.runtimeType,
           listenWhen: (prev, next) {
             if (prev is GamePlaying && next is GamePlaying) {
               // Survive clock keeps lastScoreGained — do not re-fire clear FX.
@@ -277,7 +317,11 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
             return true;
           },
           listener: (context, state) async {
+            if (state is GameLoading || state is GameInitial) {
+              context.read<GameHudCubit>().resetPlay();
+            }
             if (state is GamePlaying) {
+              context.read<GameHudCubit>().setTimeUpBusy(false);
               _syncBombTimer(state.session);
               if (state.bombSpawned) {
                 _pushFx(
@@ -321,8 +365,9 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
                 if (state.lastScoreGained > 0 &&
                     state.session.mode != GameMode.zen &&
                     f.floatingScore == null) {
-                  _hudHeldScore =
-                      state.session.score - state.lastScoreGained;
+                  context.read<GameHudCubit>().holdScore(
+                        state.session.score - state.lastScoreGained,
+                      );
                   next = next.copyWith(floatingScore: state.lastScoreGained);
                 }
                 if (cleared) {
@@ -365,11 +410,22 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
             }
           },
           builder: (context, state) {
-            return TickerMode(
-              enabled: !_paused,
-              child: IgnorePointer(
-                ignoring: _paused,
-                child: Stack(
+            final playing = _PlayingLayer(
+              palette: palette,
+              mode: widget.mode,
+              drag: _drag,
+              gridKey: _gridKey,
+              scoreHudKey: _scoreHudKey,
+              onPause: () => _confirmExit(context, palette),
+            );
+            return BlocSelector<GameHudCubit, GameHudState, bool>(
+              selector: (s) => s.paused,
+              builder: (context, paused) {
+                return TickerMode(
+                  enabled: !paused,
+                  child: IgnorePointer(
+                    ignoring: paused,
+                    child: Stack(
                     children: [
                       if (state is GameLoading || state is GameInitial)
                         Center(
@@ -377,25 +433,15 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
                             color: palette.accentPrimary,
                           ),
                         )
-                      else if (state is GamePlaying)
-                        _buildPlaying(context, state, palette)
                       else if (state is GameTimeUpState)
                         _TimeUpLayer(
                           session: state.session,
                           isNewBest: state.isNewBest,
                           palette: palette,
-                          playing: _buildPlaying(
-                            context,
-                            GamePlaying(state.session),
-                            palette,
-                          ),
+                          playing: playing,
                         )
-                      else if (state is GameOverState)
-                        _buildPlaying(
-                          context,
-                          GamePlaying(state.session),
-                          palette,
-                        ),
+                      else
+                        playing,
                       ValueListenableBuilder<_GameFx>(
                         valueListenable: _fx,
                         builder: (context, fx, _) {
@@ -403,21 +449,23 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
                             fit: StackFit.expand,
                             children: [
                               if (fx.showBlast)
-                                Align(
-                                  alignment: const Alignment(0, 0.08),
-                                  child: SizedBox(
-                                    width: 420,
-                                    height: 420,
-                                    child: BlastBurst(
-                                      key: ValueKey('fire_${fx.burstSeed}'),
-                                      seed: fx.burstSeed,
-                                      colors: [
-                                        const Color(0xFFFF6D00),
-                                        const Color(0xFFFF1744),
-                                        const Color(0xFFFFEA00),
-                                        palette.comboGold,
-                                        palette.accentPrimary,
-                                      ],
+                                RepaintBoundary(
+                                  child: Align(
+                                    alignment: const Alignment(0, 0.08),
+                                    child: SizedBox(
+                                      width: 420,
+                                      height: 420,
+                                      child: BlastBurst(
+                                        key: ValueKey('fire_${fx.burstSeed}'),
+                                        seed: fx.burstSeed,
+                                        colors: [
+                                          const Color(0xFFFF6D00),
+                                          const Color(0xFFFF1744),
+                                          const Color(0xFFFFEA00),
+                                          palette.comboGold,
+                                          palette.accentPrimary,
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -434,20 +482,22 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
                                   ),
                                 ),
                               if (fx.showBurst && PerfTier.instance.screenBurst)
-                                Align(
-                                  alignment: const Alignment(0, -0.05),
-                                  child: SizedBox(
-                                    width: 260,
-                                    height: 260,
-                                    child: ClearBurst(
-                                      seed: fx.burstSeed,
-                                      intense: true,
-                                      colors: [
-                                        palette.comboGold,
-                                        palette.accentPrimary,
-                                        palette.accentSecondary,
-                                        ...palette.blocks.take(3),
-                                      ],
+                                RepaintBoundary(
+                                  child: Align(
+                                    alignment: const Alignment(0, -0.05),
+                                    child: SizedBox(
+                                      width: 260,
+                                      height: 260,
+                                      child: ClearBurst(
+                                        seed: fx.burstSeed,
+                                        intense: true,
+                                        colors: [
+                                          palette.comboGold,
+                                          palette.accentPrimary,
+                                          palette.accentSecondary,
+                                          ...palette.blocks.take(3),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -506,203 +556,48 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
                           );
                         },
                       ),
-                      Positioned(
-                        left: -9999,
-                        child: RepaintBoundary(
-                          key: _shareKey,
-                          child: state is GamePlaying ||
-                                  state is GameOverState ||
-                                  state is GameTimeUpState
-                              ? ShareCardPainter.buildCard(
-                                  session: switch (state) {
-                                    GamePlaying(:final session) => session,
-                                    GameOverState(:final session) => session,
-                                    GameTimeUpState(:final session) => session,
-                                    _ => (state as GamePlaying).session,
-                                  },
-                                  palette: palette,
-                                )
-                              : const SizedBox.shrink(),
+                      if (state is GameOverState)
+                        Positioned(
+                          left: -9999,
+                          child: RepaintBoundary(
+                            key: _shareKey,
+                            child: ShareCardPainter.buildCard(
+                              session: state.session,
+                              palette: palette,
+                            ),
+                          ),
                         ),
-                      ),
                     ],
                   ),
-                ),
-              );
+                  ),
+                );
+              },
+            );
             },
               ),
             ),
           ),
-          bottomNavigationBar: BannerAdBar(adsRemoved: adsRemoved),
+          bottomNavigationBar: BlocSelector<SettingsCubit, AppSettings, bool>(
+            selector: (s) => s.adsRemoved,
+            builder: (context, adsRemoved) =>
+                BannerAdBar(adsRemoved: adsRemoved),
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _buildPlaying(
-    BuildContext context,
-    GamePlaying state,
-    ColorPalette palette,
-  ) {
-    final session = state.session;
-    final modeLabel = switch (session.mode) {
-      GameMode.classic => 'Classic · Survive',
-      GameMode.daily => 'Daily · 1.5× score',
-      GameMode.zen => 'Zen · No bombs · Endless',
-    };
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final h = constraints.maxHeight;
-        final w = constraints.maxWidth;
-        final pad = (w * 0.008).clamp(2.0, 6.0);
-
-        // Compact chrome so the square board can fill the screen.
-        final headerH = 30.0;
-        final trayH = (h * 0.1).clamp(72.0, 96.0);
-
-        return Padding(
-          padding: EdgeInsets.symmetric(horizontal: pad),
-          child: Column(
-            children: [
-              const SizedBox(height: 8),
-              SizedBox(
-                height: headerH,
-                child: Row(
-                  children: [
-                    IconButton(
-                      tooltip: 'Pause',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 40,
-                        minHeight: 40,
-                      ),
-                      onPressed: () => _confirmExit(context, palette),
-                      icon: Icon(
-                        Icons.pause_rounded,
-                        color: palette.textPrimary,
-                        size: 26,
-                      ),
-                    ),
-                    Expanded(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              AppConstants.appName,
-                              style: AppTextStyles.section(
-                                palette.textPrimary,
-                              ).copyWith(height: 1.05),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                            ),
-                            Text(
-                              modeLabel,
-                              style: AppTextStyles.mini(
-                                palette.textSecondary,
-                              ).copyWith(height: 1.05),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 40),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 6),
-              ScoreDisplay(
-                score: _hudHeldScore ?? session.score,
-                bestScore: session.bestScore,
-                palette: palette,
-                isNewBest:
-                    session.score > 0 &&
-                    session.score >= session.bestScore &&
-                    session.mode != GameMode.zen,
-                hideScore: session.mode == GameMode.zen,
-                movesMade: session.movesMade,
-                mode: session.mode,
-                scoreSlotKey: _scoreHudKey,
-              ),
-              const SizedBox(height: 2),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, gridBox) {
-                    // Leave a strip above the square for the survive clock.
-                    final timerReserve = 46.0;
-                    final side = math.min(
-                      gridBox.maxWidth,
-                      (gridBox.maxHeight - timerReserve).clamp(
-                        120.0,
-                        gridBox.maxHeight,
-                      ),
-                    );
-
-                    return Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SurviveTimerHud(palette: palette),
-                          const SizedBox(height: 6),
-                          GameGrid(
-                            gridKey: _gridKey,
-                            grid: session.grid,
-                            palette: palette,
-                            maxWidth: side,
-                            ghostListenable: _drag.ghost,
-                            clearedRows: state.clearedRows,
-                            clearedCols: state.clearedCols,
-                            placementCells: state.placementAnimCells,
-                            blastCells: state.blastCells,
-                            clearFxColors: state.clearFxColors,
-                            timeBomb: session.timeBomb,
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 2),
-              PieceTray(
-                pieces: session.currentPieces,
-                palette: palette,
-                grid: session.grid,
-                gridKey: _gridKey,
-                drag: _drag,
-                height: trayH,
-                stripBombs: session.mode == GameMode.zen,
-                onDrop: (pieceId, row, col) {
-                  context.read<GameBloc>().add(
-                    PiecePlaced(pieceId: pieceId, row: row, col: col),
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 
   void _onScoreFlyArrived() {
     if (!mounted) return;
     _pushFx((f) => f.copyWith(clearFloating: true));
-    if (_hudHeldScore == null) return;
-    setState(() => _hudHeldScore = null);
+    context.read<GameHudCubit>().holdScore(null);
   }
 
   void _freezePlay(bool freeze) {
-    if (_paused == freeze) return;
-    setState(() => _paused = freeze);
     if (!mounted) return;
+    final hud = context.read<GameHudCubit>();
+    if (hud.state.paused == freeze) return;
+    hud.setPaused(freeze);
     final bloc = context.read<GameBloc>();
     bloc.add(freeze ? const GamePaused() : const GameResumed());
     if (freeze) {
@@ -740,6 +635,7 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
         if (session != null && !session.isGameOver) {
           await sl<GameRepository>().saveSession(session);
         }
+        if (!context.mounted) return;
         if ((session?.movesMade ?? 0) >= 5) {
           final removed = context.read<SettingsCubit>().state.adsRemoved;
           await sl<AdService>().showInterstitial(adsRemoved: removed);
@@ -883,7 +779,291 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
 
 }
 
-class _TimeUpLayer extends StatefulWidget {
+class _PlayingLayer extends StatelessWidget {
+  const _PlayingLayer({
+    required this.palette,
+    required this.mode,
+    required this.drag,
+    required this.gridKey,
+    required this.scoreHudKey,
+    required this.onPause,
+  });
+
+  final ColorPalette palette;
+  final GameMode mode;
+  final PieceDragController drag;
+  final GlobalKey gridKey;
+  final GlobalKey scoreHudKey;
+  final VoidCallback onPause;
+
+  @override
+  Widget build(BuildContext context) {
+    final modeLabel = switch (mode) {
+      GameMode.classic => 'Classic · Survive',
+      GameMode.daily => 'Daily · 1.5× score',
+      GameMode.zen => 'Zen · No bombs · Endless',
+    };
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final h = constraints.maxHeight;
+        final w = constraints.maxWidth;
+        final pad = (w * 0.008).clamp(2.0, 6.0);
+        const headerH = 30.0;
+        final trayH = (h * 0.1).clamp(72.0, 96.0);
+
+        return Padding(
+          padding: EdgeInsets.symmetric(horizontal: pad),
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
+              SizedBox(
+                height: headerH,
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Pause',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 40,
+                        minHeight: 40,
+                      ),
+                      onPressed: onPause,
+                      icon: Icon(
+                        Icons.pause_rounded,
+                        color: palette.textPrimary,
+                        size: 26,
+                      ),
+                    ),
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              AppConstants.appName,
+                              style: AppTextStyles.section(
+                                palette.textPrimary,
+                              ).copyWith(height: 1.05),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                            Text(
+                              modeLabel,
+                              style: AppTextStyles.mini(
+                                palette.textSecondary,
+                              ).copyWith(height: 1.05),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 40),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
+              RepaintBoundary(
+                child: _ScoreHud(
+                  palette: palette,
+                  scoreSlotKey: scoreHudKey,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, gridBox) {
+                    const timerReserve = 46.0;
+                    final side = math.min(
+                      gridBox.maxWidth,
+                      (gridBox.maxHeight - timerReserve).clamp(
+                        120.0,
+                        gridBox.maxHeight,
+                      ),
+                    );
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SurviveTimerHud(palette: palette),
+                          const SizedBox(height: 6),
+                          _BoardPane(
+                            palette: palette,
+                            side: side,
+                            gridKey: gridKey,
+                            ghostListenable: drag.ghost,
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              _TrayPane(
+                palette: palette,
+                drag: drag,
+                gridKey: gridKey,
+                height: trayH,
+                stripBombs: mode == GameMode.zen,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ScoreHud extends StatelessWidget {
+  const _ScoreHud({required this.palette, required this.scoreSlotKey});
+
+  final ColorPalette palette;
+  final GlobalKey scoreSlotKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<GameHudCubit, GameHudState>(
+      buildWhen: (p, n) => p.heldScore != n.heldScore,
+      builder: (context, hud) {
+        return BlocSelector<GameBloc, GameState,
+            ({int score, int best, int moves, GameMode mode})?>(
+          selector: (s) {
+            final session = _sessionOf(s);
+            if (session == null) return null;
+            return (
+              score: session.score,
+              best: session.bestScore,
+              moves: session.movesMade,
+              mode: session.mode,
+            );
+          },
+          builder: (context, vm) {
+            if (vm == null) return const SizedBox.shrink();
+            return ScoreDisplay(
+              score: hud.heldScore ?? vm.score,
+              bestScore: vm.best,
+              palette: palette,
+              isNewBest: vm.score > 0 &&
+                  vm.score >= vm.best &&
+                  vm.mode != GameMode.zen,
+              hideScore: vm.mode == GameMode.zen,
+              movesMade: vm.moves,
+              mode: vm.mode,
+              scoreSlotKey: scoreSlotKey,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _BoardPane extends StatelessWidget {
+  const _BoardPane({
+    required this.palette,
+    required this.side,
+    required this.gridKey,
+    required this.ghostListenable,
+  });
+
+  final ColorPalette palette;
+  final double side;
+  final GlobalKey gridKey;
+  final ValueListenable<GhostState?> ghostListenable;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<GameBloc, GameState>(
+      buildWhen: (p, n) {
+        if (p is GamePlaying && n is GamePlaying) {
+          return _gridCellsChanged(p.session.grid, n.session.grid) ||
+              p.session.timeBomb != n.session.timeBomb ||
+              !listEquals(p.clearedRows, n.clearedRows) ||
+              !listEquals(p.clearedCols, n.clearedCols) ||
+              !listEquals(p.blastCells, n.blastCells) ||
+              p.clearFxColors != n.clearFxColors ||
+              !listEquals(p.placementAnimCells, n.placementAnimCells);
+        }
+        final a = _sessionOf(p);
+        final b = _sessionOf(n);
+        if (a == null || b == null) return p.runtimeType != n.runtimeType;
+        return _gridCellsChanged(a.grid, b.grid) || a.timeBomb != b.timeBomb;
+      },
+      builder: (context, state) {
+        final session = _sessionOf(state);
+        if (session == null) return const SizedBox.shrink();
+        final playing = state is GamePlaying ? state : null;
+        return GameGrid(
+          gridKey: gridKey,
+          grid: session.grid,
+          palette: palette,
+          maxWidth: side,
+          ghostListenable: ghostListenable,
+          clearedRows: playing?.clearedRows ?? const [],
+          clearedCols: playing?.clearedCols ?? const [],
+          placementCells: playing?.placementAnimCells ?? const [],
+          blastCells: playing?.blastCells ?? const [],
+          clearFxColors: playing?.clearFxColors ?? const {},
+          timeBomb: session.timeBomb,
+        );
+      },
+    );
+  }
+}
+
+class _TrayPane extends StatelessWidget {
+  const _TrayPane({
+    required this.palette,
+    required this.drag,
+    required this.gridKey,
+    required this.height,
+    required this.stripBombs,
+  });
+
+  final ColorPalette palette;
+  final PieceDragController drag;
+  final GlobalKey gridKey;
+  final double height;
+  final bool stripBombs;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<GameBloc, GameState>(
+      buildWhen: (p, n) {
+        final a = _sessionOf(p);
+        final b = _sessionOf(n);
+        if (a == null || b == null) return p.runtimeType != n.runtimeType;
+        return _gridCellsChanged(a.grid, b.grid);
+      },
+      builder: (context, state) {
+        final session = _sessionOf(state);
+        if (session == null) return const SizedBox.shrink();
+        return PieceTray(
+          pieces: session.currentPieces,
+          palette: palette,
+          grid: session.grid,
+          gridKey: gridKey,
+          drag: drag,
+          height: height,
+          stripBombs: stripBombs,
+          onDrop: (pieceId, row, col) {
+            context.read<GameBloc>().add(
+              PiecePlaced(pieceId: pieceId, row: row, col: col),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _TimeUpLayer extends StatelessWidget {
   const _TimeUpLayer({
     required this.session,
     required this.isNewBest,
@@ -896,23 +1076,17 @@ class _TimeUpLayer extends StatefulWidget {
   final ColorPalette palette;
   final Widget playing;
 
-  @override
-  State<_TimeUpLayer> createState() => _TimeUpLayerState();
-}
-
-class _TimeUpLayerState extends State<_TimeUpLayer> {
-  bool _busy = false;
-
-  Future<void> _watchAd() async {
-    if (_busy) return;
-    setState(() => _busy = true);
+  Future<void> _watchAd(BuildContext context) async {
+    final hud = context.read<GameHudCubit>();
+    if (hud.state.timeUpBusy) return;
+    hud.setTimeUpBusy(true);
     try {
       final removed = context.read<SettingsCubit>().state.adsRemoved;
       var ok = removed;
       if (!removed) {
         ok = await sl<AdService>().showRewarded(onEarned: () {});
       }
-      if (!mounted) return;
+      if (!context.mounted) return;
       if (!ok) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -923,7 +1097,7 @@ class _TimeUpLayerState extends State<_TimeUpLayer> {
       }
       context.read<GameBloc>().add(const SurviveExtraTimeGranted());
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (context.mounted) hud.setTimeUpBusy(false);
     }
   }
 
@@ -934,21 +1108,26 @@ class _TimeUpLayerState extends State<_TimeUpLayer> {
       children: [
         TickerMode(
           enabled: false,
-          child: IgnorePointer(child: widget.playing),
+          child: IgnorePointer(child: playing),
         ),
-        TimeUpResultView(
-          session: widget.session,
-          isNewBest: widget.isNewBest,
-          palette: widget.palette,
-          busy: _busy,
-          onRestart: () {
-            context.read<GameBloc>().add(const GameReset());
+        BlocSelector<GameHudCubit, GameHudState, bool>(
+          selector: (s) => s.timeUpBusy,
+          builder: (context, busy) {
+            return TimeUpResultView(
+              session: session,
+              isNewBest: isNewBest,
+              palette: palette,
+              busy: busy,
+              onRestart: () {
+                context.read<GameBloc>().add(const GameReset());
+              },
+              onHome: () {
+                context.read<GameBloc>().add(const SurviveGiveUp());
+                Navigator.of(context).pop();
+              },
+              onWatchAd: () => _watchAd(context),
+            );
           },
-          onHome: () {
-            context.read<GameBloc>().add(const SurviveGiveUp());
-            Navigator.of(context).pop();
-          },
-          onWatchAd: _watchAd,
         ),
       ],
     );

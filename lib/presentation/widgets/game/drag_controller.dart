@@ -249,6 +249,9 @@ class DragMath {
       return guessed;
     }
 
+    // Magnet only when already aiming at the 9×9 — not from the tray.
+    if (gr < 0 || gc < 0 || gr >= 9 || gc >= 9) return guessed;
+
     // Magnetic assist: search nearby valid cells (feels forgiving + fun).
     (int, int)? best;
     var bestDist = 1 << 30;

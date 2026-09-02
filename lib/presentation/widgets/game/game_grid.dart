@@ -90,6 +90,12 @@ class GameGrid extends StatelessWidget {
     final pad = BoardMetrics.gridPadding;
     final side =
         maxWidth ?? (MediaQuery.sizeOf(context).width - 28).clamp(200.0, 420.0);
+    final inner = side - pad * 2;
+    final raw = (inner - gap * 8) / 9 - BoardMetrics.cellSlack;
+    final safeCell = raw.clamp(8.0, 200.0);
+    BoardSnap.cell = safeCell;
+    BoardSnap.gap = gap;
+    final boardW = safeCell * 9 + gap * 8;
 
     return RepaintBoundary(
       child: SizedBox(
@@ -118,26 +124,11 @@ class GameGrid extends StatelessWidget {
           ),
           child: Padding(
             padding: EdgeInsets.all(pad),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final maxSide = math.min(
-                  constraints.maxWidth,
-                  constraints.maxHeight,
-                );
-                final raw =
-                    (maxSide - gap * 8) / 9 - BoardMetrics.cellSlack;
-                final safeCell = raw.clamp(8.0, 200.0);
-
-                BoardSnap.cell = safeCell;
-                BoardSnap.gap = gap;
-
-                final boardW = safeCell * 9 + gap * 8;
-
-                return Center(
-                  child: SizedBox(
-                    key: BoardSnap.cellsKey,
-                    width: boardW,
-                    height: boardW,
+            child: Center(
+              child: SizedBox(
+                key: BoardSnap.cellsKey,
+                width: boardW,
+                height: boardW,
                     child: Stack(
                       children: [
                         // Stable board — one CustomPaint layer (no 81 widgets).
@@ -152,51 +143,55 @@ class GameGrid extends StatelessWidget {
                           ),
                         ),
                         if (placementCells.isNotEmpty)
-                          _PlacementPunchOverlay(
-                            key: ValueKey('place_${placementCells.join()}'),
-                            cells: placementCells,
-                            cell: safeCell,
-                            gap: gap,
-                            boardW: boardW,
+                          RepaintBoundary(
+                            child: _PlacementPunchOverlay(
+                              key: ValueKey('place_${placementCells.join()}'),
+                              cells: placementCells,
+                              cell: safeCell,
+                              gap: gap,
+                              boardW: boardW,
+                            ),
                           ),
                         if (clearedRows.isNotEmpty ||
                             clearedCols.isNotEmpty ||
                             blastCells.isNotEmpty ||
                             clearFxColors.isNotEmpty)
-                          ClearFxOverlay(
-                            key: ValueKey(
-                              'fx_${clearedRows.join()}_'
-                              '${clearedCols.join()}_'
-                              '${blastCells.length}_'
-                              '${clearFxColors.length}',
+                          RepaintBoundary(
+                            child: ClearFxOverlay(
+                              key: ValueKey(
+                                'fx_${clearedRows.join()}_'
+                                '${clearedCols.join()}_'
+                                '${blastCells.length}_'
+                                '${clearFxColors.length}',
+                              ),
+                              clearedRows: clearedRows,
+                              clearedCols: clearedCols,
+                              blastCells: blastCells,
+                              clearFxColors: clearFxColors,
+                              cell: safeCell,
+                              gap: gap,
+                              boardW: boardW,
+                              palette: palette,
                             ),
-                            clearedRows: clearedRows,
-                            clearedCols: clearedCols,
-                            blastCells: blastCells,
-                            clearFxColors: clearFxColors,
-                            cell: safeCell,
-                            gap: gap,
-                            boardW: boardW,
-                            palette: palette,
                           ),
                         if (ghostListenable != null)
-                          _GhostOverlay(
-                            listenable: ghostListenable!,
-                            palette: palette,
-                            cell: safeCell,
-                            gap: gap,
-                            boardW: boardW,
+                          RepaintBoundary(
+                            child: _GhostOverlay(
+                              listenable: ghostListenable!,
+                              palette: palette,
+                              cell: safeCell,
+                              gap: gap,
+                              boardW: boardW,
+                            ),
                           ),
                       ],
                     ),
                   ),
-                );
-              },
+                ),
+              ),
             ),
           ),
-        ),
-      ),
-    );
+        );
   }
 }
 

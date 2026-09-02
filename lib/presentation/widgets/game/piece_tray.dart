@@ -49,6 +49,7 @@ class _PieceTrayState extends State<PieceTray>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   Ticker? _ticker;
   Duration _lastElapsed = Duration.zero;
+  bool _ticksOn = true;
 
   /// Local belt — recycle is applied here first (same frame as scroll), then synced to bloc.
   final List<Piece> _belt = [];
@@ -88,8 +89,9 @@ class _PieceTrayState extends State<PieceTray>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Parent TickerMode(false) mutes this ticker; punch through when enabled.
-    if (TickerMode.of(context)) {
+    // Cache InheritedWidget — do not look it up on every vsync tick.
+    _ticksOn = TickerMode.valuesOf(context).enabled;
+    if (_ticksOn) {
       _lastElapsed = Duration.zero;
       if (_ticker != null && !_ticker!.isActive) {
         _ticker!.start();
@@ -173,8 +175,7 @@ class _PieceTrayState extends State<PieceTray>
   }
 
   void _onTick(Duration elapsed) {
-    if (!mounted) return;
-    if (!TickerMode.of(context)) return;
+    if (!mounted || !_ticksOn) return;
     if (_lastElapsed == Duration.zero) {
       _lastElapsed = elapsed;
       return;
@@ -226,12 +227,13 @@ class _PieceTrayState extends State<PieceTray>
             builder: (context, constraints) {
               final h = constraints.maxHeight;
               final w = constraints.maxWidth;
+              final visible =
+                  (w / _slotWidth).ceil().clamp(3, AppConstants.beltSize) + 2;
 
               return ListenableBuilder(
                 listenable: _beltTick,
                 builder: (context, _) {
-                  final belt = List<Piece>.from(_belt);
-                  if (belt.isEmpty) {
+                  if (_belt.isEmpty) {
                     return Center(
                       child: Text(
                         'Loading pieces…',
@@ -240,90 +242,90 @@ class _PieceTrayState extends State<PieceTray>
                     );
                   }
 
-                  return ListenableBuilder(
-                    listenable: _scroll,
-                    builder: (context, _) {
-                      final scroll = _scroll.value;
-                      final children = <Widget>[];
-                      for (var i = 0; i < belt.length; i++) {
-                        final x = i * _slotWidth - scroll;
-                        if (x < -_slotWidth || x > w + _slotWidth) continue;
-                        final piece = belt[i];
-                        children.add(
-                          Positioned(
-                            left: x,
-                            top: 0,
-                            width: _slotWidth,
-                            height: h,
-                            child: RepaintBoundary(
-                              child: ListenableBuilder(
-                                listenable: widget.drag.piece,
-                                builder: (context, child) {
-                                  final dimmed =
-                                      widget.drag.piece.value?.id == piece.id;
-                                  return Opacity(
-                                    opacity: dimmed ? 0.22 : 1,
-                                    child: child,
-                                  );
-                                },
-                                child: _ConveyorPiece(
-                                  key: ValueKey('belt_${piece.id}'),
-                                  piece: piece,
-                                  palette: widget.palette,
-                                  grid: widget.grid,
-                                  drag: widget.drag,
-                                  trayHeight: widget.height,
-                                  onDragStart: () => _dragging = true,
-                                  onDragEnd: () => _dragging = false,
-                                  onDrop: widget.onDrop,
-                                ),
-                              ),
-                            ),
+                  final show = visible.clamp(0, _belt.length);
+                  final stripW = show * _slotWidth;
+                  final row = Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var i = 0; i < show; i++)
+                        SizedBox(
+                          width: _slotWidth,
+                          height: h,
+                          child: _ConveyorPiece(
+                            key: ValueKey('belt_${_belt[i].id}'),
+                            piece: _belt[i],
+                            palette: widget.palette,
+                            grid: widget.grid,
+                            drag: widget.drag,
+                            trayHeight: widget.height,
+                            onDragStart: () => _dragging = true,
+                            onDragEnd: () => _dragging = false,
+                            onDrop: widget.onDrop,
                           ),
-                        );
-                      }
+                        ),
+                    ],
+                  );
 
-                      return Stack(
-                        clipBehavior: Clip.hardEdge,
-                        children: [
-                          ...children,
-                          IgnorePointer(
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Container(
-                                width: 28,
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      widget.palette.surface,
-                                      widget.palette.surface
-                                          .withValues(alpha: 0),
-                                    ],
-                                  ),
+                  return Stack(
+                    clipBehavior: Clip.hardEdge,
+                    children: [
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        width: stripW,
+                        height: h,
+                        child: ListenableBuilder(
+                          listenable: _scroll,
+                          child: row,
+                          builder: (context, child) {
+                            return Transform.translate(
+                              offset: Offset(-_scroll.value, 0),
+                              child: child,
+                            );
+                          },
+                        ),
+                      ),
+                      IgnorePointer(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: SizedBox(
+                            width: 28,
+                            height: h,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    widget.palette.surface,
+                                    widget.palette.surface
+                                        .withValues(alpha: 0),
+                                  ],
                                 ),
                               ),
                             ),
                           ),
-                          IgnorePointer(
-                            child: Align(
-                              alignment: Alignment.centerRight,
-                              child: Container(
-                                width: 28,
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      widget.palette.surface
-                                          .withValues(alpha: 0),
-                                      widget.palette.surface,
-                                    ],
-                                  ),
+                        ),
+                      ),
+                      IgnorePointer(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: SizedBox(
+                            width: 28,
+                            height: h,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    widget.palette.surface
+                                        .withValues(alpha: 0),
+                                    widget.palette.surface,
+                                  ],
                                 ),
                               ),
                             ),
                           ),
-                        ],
-                      );
-                    },
+                        ),
+                      ),
+                    ],
                   );
                 },
               );
@@ -365,6 +367,8 @@ class _ConveyorPiece extends StatefulWidget {
 class _ConveyorPieceState extends State<_ConveyorPiece> {
   int? _pointer;
   int _boardRetry = 0;
+  Offset? _down;
+  bool _aimed = false;
 
   Piece get piece => widget.piece;
   PieceDragController get drag => widget.drag;
@@ -384,6 +388,8 @@ class _ConveyorPieceState extends State<_ConveyorPiece> {
   void _onInterrupted() {
     _pointer = null;
     _boardRetry = 0;
+    _down = null;
+    _aimed = false;
   }
 
   double get _cellSize {
@@ -394,12 +400,29 @@ class _ConveyorPieceState extends State<_ConveyorPiece> {
 
   void _onUpdate(Offset global) {
     drag.update(global);
+    if (!_aimed) {
+      final down = _down;
+      if (down != null && (global - down).distanceSquared < 256) {
+        return;
+      }
+      _aimed = true;
+    }
     DragMath.applyGhost(
       drag: drag,
       board: widget.grid,
       piece: piece,
       palette: widget.palette,
       globalFinger: global,
+    );
+  }
+
+  void _returnToTray() {
+    _boardRetry = 0;
+    drag.beginCancelSettle(
+      onComplete: () {
+        drag.clear();
+        widget.onDragEnd();
+      },
     );
   }
 
@@ -472,6 +495,8 @@ class _ConveyorPieceState extends State<_ConveyorPiece> {
     }
     _pointer = null;
     _boardRetry = 0;
+    _down = null;
+    _aimed = false;
   }
 
   @override
@@ -482,51 +507,69 @@ class _ConveyorPieceState extends State<_ConveyorPiece> {
       cellSize: _cellSize,
     );
 
-    return Listener(
-      behavior: HitTestBehavior.opaque,
-      onPointerDown: (e) {
-        if (_pointer == e.pointer) return;
-        if (_pointer != null || drag.isDragging) {
-          _stealIfStuck();
-        }
-        _pointer = e.pointer;
-        _boardRetry = 0;
-        widget.onDragStart();
-        sl<HapticService>().selection();
-        drag.start(
-          p: piece,
-          index: 0,
-          global: e.position,
-          pointer: e.pointer,
+    return ListenableBuilder(
+      listenable: drag.piece,
+      builder: (context, child) {
+        final dimmed = drag.piece.value?.id == piece.id;
+        return Opacity(
+          opacity: dimmed ? 0.22 : 1,
+          child: child,
         );
-        _onUpdate(e.position);
       },
-      onPointerMove: (e) {
-        if (e.pointer != _pointer) return;
-        _onUpdate(e.position);
-      },
-      onPointerUp: (e) {
-        if (e.pointer != _pointer) return;
-        _pointer = null;
-        _finish(e.position);
-      },
-      onPointerCancel: (e) {
-        if (_pointer != null && e.pointer != _pointer) return;
-        _pointer = null;
-        _boardRetry = 0;
-        if (drag.phase.value == DragPhase.settling ||
-            drag.phase.value == DragPhase.canceling) {
-          drag.completeSettle();
-          return;
-        }
-        if (drag.isDragging &&
-            (drag.activePointer == null || drag.activePointer == e.pointer)) {
-          drag.clear();
-          widget.onDragEnd();
-        }
-      },
-      child: SizedBox.expand(
-        child: Center(child: preview),
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (e) {
+          if (_pointer == e.pointer) return;
+          if (_pointer != null || drag.isDragging) {
+            _stealIfStuck();
+          }
+          _pointer = e.pointer;
+          _boardRetry = 0;
+          _down = e.position;
+          _aimed = false;
+          widget.onDragStart();
+          sl<HapticService>().selection();
+          drag.start(
+            p: piece,
+            index: 0,
+            global: e.position,
+            pointer: e.pointer,
+          );
+          drag.update(e.position);
+        },
+        onPointerMove: (e) {
+          if (e.pointer != _pointer) return;
+          _onUpdate(e.position);
+        },
+        onPointerUp: (e) {
+          if (e.pointer != _pointer) return;
+          _pointer = null;
+          if (!_aimed) {
+            _returnToTray();
+            return;
+          }
+          _finish(e.position);
+        },
+        onPointerCancel: (e) {
+          if (_pointer != null && e.pointer != _pointer) return;
+          _pointer = null;
+          _boardRetry = 0;
+          _down = null;
+          _aimed = false;
+          if (drag.phase.value == DragPhase.settling ||
+              drag.phase.value == DragPhase.canceling) {
+            drag.completeSettle();
+            return;
+          }
+          if (drag.isDragging &&
+              (drag.activePointer == null || drag.activePointer == e.pointer)) {
+            drag.clear();
+            widget.onDragEnd();
+          }
+        },
+        child: SizedBox.expand(
+          child: Center(child: preview),
+        ),
       ),
     );
   }
