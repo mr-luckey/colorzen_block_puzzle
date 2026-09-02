@@ -24,12 +24,16 @@ import 'package:colorzen_block_puzzle/presentation/bloc/theme/theme_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/ads/banner_ad_bar.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/app_button.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/bomb_widgets.dart';
+import 'package:colorzen_block_puzzle/presentation/widgets/game/clear_celebration.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/clear_burst.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/drag_controller.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/game_exit_sheet.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/game_grid.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/move_praise_banner.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/piece_tray.dart';
+import 'package:colorzen_block_puzzle/presentation/widgets/game/perf_tier.dart';
+import 'package:colorzen_block_puzzle/presentation/widgets/game/survive_timer_hud.dart';
+import 'package:colorzen_block_puzzle/presentation/widgets/game/time_up_result.dart';
 import 'package:colorzen_block_puzzle/services/ad_service.dart';
 import 'package:colorzen_block_puzzle/services/audio_service.dart';
 import 'package:colorzen_block_puzzle/services/haptic_service.dart';
@@ -73,6 +77,8 @@ class _GameViewState extends State<_GameView> {
 
   final _fx = ValueNotifier<_GameFx>(const _GameFx());
   bool _gameOverShown = false;
+  bool _paused = false;
+  bool _pauseOpen = false;
   Timer? _bombUiTimer;
   TimeBomb? _trackedBomb;
 
@@ -81,27 +87,27 @@ class _GameViewState extends State<_GameView> {
     super.initState();
     // Hard-block menu interstitials while the board is active.
     sl<AdService>().setInGameplay(true);
-    // Keep BGM looping through the whole match.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // ignore: discarded_futures
-      sl<AudioService>().ensureMusicPlaying();
-    });
+    PerfTier.instance.ensureHooked();
   }
 
   @override
   void dispose() {
     _bombUiTimer?.cancel();
     _fx.dispose();
-    _drag.dispose();
     // Allow menu / home interstitial loop again after leaving the board.
     sl<AdService>().setInGameplay(false);
     // Kick BGM for whoever is underneath (home) before route finishes.
     // ignore: discarded_futures
     sl<AudioService>().ensureMusicPlaying();
     super.dispose();
+    _drag.dispose();
   }
 
   void _syncBombTimer(GameSession session) {
+    if (_paused) {
+      _bombUiTimer?.cancel();
+      return;
+    }
     final bomb = session.timeBomb;
     if (bomb?.row == _trackedBomb?.row &&
         bomb?.col == _trackedBomb?.col &&
@@ -143,7 +149,15 @@ class _GameViewState extends State<_GameView> {
       child: DragOverlayHost(
         controller: _drag,
         palette: palette,
-        child: BlocConsumer<GameBloc, GameState>(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: WoodBackground(
+            palette: palette,
+            themeId: context.read<ThemeCubit>().state.selected,
+            animated: false,
+            child: SafeArea(
+              bottom: false,
+              child: BlocConsumer<GameBloc, GameState>(
           buildWhen: (prev, next) {
             if (prev is GamePlaying && next is GamePlaying) {
               final a = prev.session;
@@ -158,6 +172,8 @@ class _GameViewState extends State<_GameView> {
                   prev.showCombo != next.showCombo ||
                   prev.bombSpawned != next.bombSpawned ||
                   prev.boardNuked != next.boardNuked ||
+                  prev.allClear != next.allClear ||
+                  prev.linesJustCleared != next.linesJustCleared ||
                   prev.hadColorBonus != next.hadColorBonus ||
                   !listEquals(prev.clearedRows, next.clearedRows) ||
                   !listEquals(prev.clearedCols, next.clearedCols) ||
@@ -193,24 +209,9 @@ class _GameViewState extends State<_GameView> {
                     bombKind: state.session.timeBomb?.kind ?? BombKind.conveyor,
                   ),
                 );
-                Future<void>.delayed(700.ms, () {
+                Future<void>.delayed(1100.ms, () {
                   if (mounted) {
                     _pushFx((f) => f.copyWith(showBombArmed: false));
-                  }
-                });
-              }
-              if (state.boardNuked) {
-                _pushFx(
-                  (f) => f.copyWith(
-                    showBoardNuke: true,
-                    nukeBonus: state.lastScoreGained,
-                  ),
-                );
-                Future<void>.delayed(650.ms, () {
-                  if (mounted) {
-                    _pushFx(
-                      (f) => f.copyWith(showBoardNuke: false, nukeBonus: 0),
-                    );
                   }
                 });
               }
@@ -223,20 +224,33 @@ class _GameViewState extends State<_GameView> {
                   state.clearedCols.isNotEmpty ||
                   state.blastCells.isNotEmpty;
               _pushFx((f) {
+                final big = state.allClear ||
+                    state.boardNuked ||
+                    state.linesJustCleared >= 4;
+                final fireBlast = state.boardNuked ||
+                    state.blastCells.isNotEmpty ||
+                    state.linesJustCleared >= 2;
                 var next = f.copyWith(
-                  showCombo: state.showCombo,
+                  showCombo: state.showCombo && !big,
                   showBurst: cleared &&
-                      !state.boardNuked &&
-                      state.blastCells.isEmpty,
-                  showBlast: state.blastCells.isNotEmpty && !state.boardNuked,
+                      !fireBlast &&
+                      !state.allClear &&
+                      state.linesJustCleared < 4,
+                  showBlast: fireBlast && !state.boardNuked,
+                  showBoardNuke: state.boardNuked,
+                  nukeBonus: state.boardNuked ? state.lastScoreGained : 0,
+                  showClearCele: big,
+                  celeLines: state.linesJustCleared,
+                  celeAllClear: state.allClear || state.boardNuked,
+                  celeBonus: state.lastScoreGained,
                 );
-                if (state.lastScoreGained > 0) {
+                if (state.lastScoreGained > 0 && !big) {
                   next = next.copyWith(floatingScore: state.lastScoreGained);
                 }
                 if (cleared) {
                   next = next.copyWith(burstSeed: f.burstSeed + 1);
                 }
-                if (state.praise != MovePraise.none) {
+                if (state.praise != MovePraise.none && !big) {
                   next = next.copyWith(
                     praise: state.praise,
                     praiseKey: f.praiseKey + 1,
@@ -244,7 +258,14 @@ class _GameViewState extends State<_GameView> {
                 }
                 return next;
               });
-              Future<void>.delayed(650.ms, () {
+              final hold = state.boardNuked
+                  ? 1400
+                  : (state.allClear || state.linesJustCleared >= 4)
+                      ? 1200
+                      : state.linesJustCleared >= 2
+                          ? 1000
+                          : 800;
+              Future<void>.delayed(Duration(milliseconds: hold), () {
                 if (mounted) {
                   _pushFx(
                     (f) => f.copyWith(
@@ -252,6 +273,8 @@ class _GameViewState extends State<_GameView> {
                       showCombo: false,
                       showBurst: false,
                       showBlast: false,
+                      showBoardNuke: false,
+                      showClearCele: false,
                       praise: MovePraise.none,
                     ),
                   );
@@ -271,13 +294,11 @@ class _GameViewState extends State<_GameView> {
             }
           },
           builder: (context, state) {
-            return Scaffold(
-              body: WoodBackground(
-                palette: palette,
-                animated: false,
-                child: SafeArea(
-                  bottom: false,
-                  child: Stack(
+            return TickerMode(
+              enabled: !_paused,
+              child: IgnorePointer(
+                ignoring: _paused,
+                child: Stack(
                     children: [
                       if (state is GameLoading || state is GameInitial)
                         Center(
@@ -287,6 +308,17 @@ class _GameViewState extends State<_GameView> {
                         )
                       else if (state is GamePlaying)
                         _buildPlaying(context, state, palette)
+                      else if (state is GameTimeUpState)
+                        _TimeUpLayer(
+                          session: state.session,
+                          isNewBest: state.isNewBest,
+                          palette: palette,
+                          playing: _buildPlaying(
+                            context,
+                            GamePlaying(state.session),
+                            palette,
+                          ),
+                        )
                       else if (state is GameOverState)
                         _buildPlaying(
                           context,
@@ -337,7 +369,7 @@ class _GameViewState extends State<_GameView> {
                                             duration: 420.ms,
                                           ),
                                 ),
-                              if (fx.showBurst)
+                              if (fx.showBurst && PerfTier.instance.screenBurst)
                                 Align(
                                   alignment: const Alignment(0, -0.05),
                                   child: SizedBox(
@@ -355,19 +387,37 @@ class _GameViewState extends State<_GameView> {
                                     ),
                                   ),
                                 ),
-                              if (fx.showBlast)
+                              if (fx.showBlast && PerfTier.instance.screenBurst)
                                 Align(
                                   alignment: const Alignment(0, -0.05),
                                   child: SizedBox(
-                                    width: 280,
-                                    height: 280,
+                                    width: 360,
+                                    height: 360,
                                     child: BlastBurst(
                                       seed: fx.burstSeed,
                                       colors: [
-                                        palette.accentPrimary,
+                                        const Color(0xFFFF6D00),
+                                        const Color(0xFFFF1744),
                                         palette.comboGold,
-                                        ...palette.blocks.take(2),
+                                        palette.accentPrimary,
                                       ],
+                                    ),
+                                  ),
+                                ),
+                              if (fx.showClearCele)
+                                Align(
+                                  alignment: const Alignment(0, -0.08),
+                                  child: SizedBox(
+                                    width: 320,
+                                    height: 320,
+                                    child: ClearCelebration(
+                                      key: ValueKey(
+                                        'cele_${fx.burstSeed}_${fx.celeLines}',
+                                      ),
+                                      lines: fx.celeLines,
+                                      allClear: fx.celeAllClear,
+                                      bonus: fx.celeBonus,
+                                      palette: palette,
                                     ),
                                   ),
                                 ),
@@ -430,11 +480,16 @@ class _GameViewState extends State<_GameView> {
                         left: -9999,
                         child: RepaintBoundary(
                           key: _shareKey,
-                          child: state is GamePlaying || state is GameOverState
+                          child: state is GamePlaying ||
+                                  state is GameOverState ||
+                                  state is GameTimeUpState
                               ? ShareCardPainter.buildCard(
-                                  session: state is GamePlaying
-                                      ? state.session
-                                      : (state as GameOverState).session,
+                                  session: switch (state) {
+                                    GamePlaying(:final session) => session,
+                                    GameOverState(:final session) => session,
+                                    GameTimeUpState(:final session) => session,
+                                    _ => (state as GamePlaying).session,
+                                  },
                                   palette: palette,
                                 )
                               : const SizedBox.shrink(),
@@ -443,10 +498,12 @@ class _GameViewState extends State<_GameView> {
                     ],
                   ),
                 ),
+              );
+            },
               ),
-              bottomNavigationBar: BannerAdBar(adsRemoved: adsRemoved),
-            );
-          },
+            ),
+          ),
+          bottomNavigationBar: BannerAdBar(adsRemoved: adsRemoved),
         ),
       ),
     );
@@ -484,7 +541,7 @@ class _GameViewState extends State<_GameView> {
                 child: Row(
                   children: [
                     IconButton(
-                      tooltip: 'Menu',
+                      tooltip: 'Pause',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(
                         minWidth: 40,
@@ -492,9 +549,9 @@ class _GameViewState extends State<_GameView> {
                       ),
                       onPressed: () => _confirmExit(context, palette),
                       icon: Icon(
-                        Icons.arrow_back_ios_new_rounded,
+                        Icons.pause_rounded,
                         color: palette.textPrimary,
-                        size: 20,
+                        size: 26,
                       ),
                     ),
                     Expanded(
@@ -547,22 +604,36 @@ class _GameViewState extends State<_GameView> {
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, gridBox) {
-                    // Use full leftover area — largest square that fits.
-                    final side = math.min(gridBox.maxWidth, gridBox.maxHeight);
+                    // Leave a strip above the square for the survive clock.
+                    final timerReserve = 46.0;
+                    final side = math.min(
+                      gridBox.maxWidth,
+                      (gridBox.maxHeight - timerReserve).clamp(
+                        120.0,
+                        gridBox.maxHeight,
+                      ),
+                    );
 
                     return Center(
-                      child: GameGrid(
-                        gridKey: _gridKey,
-                        grid: session.grid,
-                        palette: palette,
-                        maxWidth: side,
-                        ghostListenable: _drag.ghost,
-                        clearedRows: state.clearedRows,
-                        clearedCols: state.clearedCols,
-                        placementCells: state.placementAnimCells,
-                        blastCells: state.blastCells,
-                        clearFxColors: state.clearFxColors,
-                        timeBomb: session.timeBomb,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SurviveTimerHud(palette: palette),
+                          const SizedBox(height: 6),
+                          GameGrid(
+                            gridKey: _gridKey,
+                            grid: session.grid,
+                            palette: palette,
+                            maxWidth: side,
+                            ghostListenable: _drag.ghost,
+                            clearedRows: state.clearedRows,
+                            clearedCols: state.clearedCols,
+                            placementCells: state.placementAnimCells,
+                            blastCells: state.blastCells,
+                            clearFxColors: state.clearFxColors,
+                            timeBomb: session.timeBomb,
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -590,31 +661,56 @@ class _GameViewState extends State<_GameView> {
     );
   }
 
+  void _freezePlay(bool freeze) {
+    if (_paused == freeze) return;
+    setState(() => _paused = freeze);
+    if (!mounted) return;
+    final bloc = context.read<GameBloc>();
+    bloc.add(freeze ? const GamePaused() : const GameResumed());
+    if (freeze) {
+      _drag.handleLifecycleInterrupt(completePending: false);
+      _bombUiTimer?.cancel();
+    } else {
+      final s = bloc.state;
+      if (s is GamePlaying) _syncBombTimer(s.session);
+    }
+  }
+
   Future<void> _confirmExit(BuildContext context, ColorPalette palette) async {
+    if (_pauseOpen) return;
+    _pauseOpen = true;
+    _freezePlay(true);
     final blocState = context.read<GameBloc>().state;
     final session = switch (blocState) {
       GamePlaying(:final session) => session,
       GameOverState(:final session) => session,
+      GameTimeUpState(:final session) => session,
       _ => null,
     };
-    final leave = await showGameExitSheet(
-      context: context,
-      palette: palette,
-      mode: session?.mode ?? widget.mode,
-      score: session?.score ?? 0,
-      moves: session?.movesMade ?? 0,
-    );
-    if (leave && context.mounted) {
-      // Persist board + pieces (and current run stats). On next Continue,
-      // classic score/moves reset to 0; lifetime best stays in stats.
-      if (session != null && !session.isGameOver) {
-        await sl<GameRepository>().saveSession(session);
+    var leave = false;
+    try {
+      leave = await showGameExitSheet(
+        context: context,
+        palette: palette,
+        mode: session?.mode ?? widget.mode,
+        score: session?.score ?? 0,
+        moves: session?.movesMade ?? 0,
+      );
+      if (leave && context.mounted) {
+        // Persist board + pieces (and current run stats). On next Continue,
+        // classic score/moves reset to 0; lifetime best stays in stats.
+        if (session != null && !session.isGameOver) {
+          await sl<GameRepository>().saveSession(session);
+        }
+        if ((session?.movesMade ?? 0) >= 5) {
+          final removed = context.read<SettingsCubit>().state.adsRemoved;
+          await sl<AdService>().showInterstitial(adsRemoved: removed);
+        }
+        if (context.mounted) Navigator.of(context).pop();
       }
-      if ((session?.movesMade ?? 0) >= 5) {
-        final removed = context.read<SettingsCubit>().state.adsRemoved;
-        await sl<AdService>().showInterstitial(adsRemoved: removed);
-      }
-      if (context.mounted) Navigator.of(context).pop();
+    } finally {
+      _pauseOpen = false;
+      if (mounted && !leave) _freezePlay(false);
     }
   }
 
@@ -737,6 +833,79 @@ class _GameViewState extends State<_GameView> {
   }
 
 }
+
+class _TimeUpLayer extends StatefulWidget {
+  const _TimeUpLayer({
+    required this.session,
+    required this.isNewBest,
+    required this.palette,
+    required this.playing,
+  });
+
+  final GameSession session;
+  final bool isNewBest;
+  final ColorPalette palette;
+  final Widget playing;
+
+  @override
+  State<_TimeUpLayer> createState() => _TimeUpLayerState();
+}
+
+class _TimeUpLayerState extends State<_TimeUpLayer> {
+  bool _busy = false;
+
+  Future<void> _watchAd() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final removed = context.read<SettingsCubit>().state.adsRemoved;
+      var ok = removed;
+      if (!removed) {
+        ok = await sl<AdService>().showRewarded(onEarned: () {});
+      }
+      if (!mounted) return;
+      if (!ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Rewarded ad not ready. Try again shortly.'),
+          ),
+        );
+        return;
+      }
+      context.read<GameBloc>().add(const SurviveExtraTimeGranted());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        TickerMode(
+          enabled: false,
+          child: IgnorePointer(child: widget.playing),
+        ),
+        TimeUpResultView(
+          session: widget.session,
+          isNewBest: widget.isNewBest,
+          palette: widget.palette,
+          busy: _busy,
+          onRestart: () {
+            context.read<GameBloc>().add(const GameReset());
+          },
+          onHome: () {
+            context.read<GameBloc>().add(const SurviveGiveUp());
+            Navigator.of(context).pop();
+          },
+          onWatchAd: _watchAd,
+        ),
+      ],
+    );
+  }
+}
+
 
 class _GameOverCard extends StatelessWidget {
   const _GameOverCard({
@@ -897,6 +1066,10 @@ class _GameFx {
     this.showBoardNuke = false,
     this.nukeBonus = 0,
     this.bombKind = BombKind.conveyor,
+    this.showClearCele = false,
+    this.celeLines = 0,
+    this.celeAllClear = false,
+    this.celeBonus = 0,
   });
 
   final int? floatingScore;
@@ -910,6 +1083,10 @@ class _GameFx {
   final bool showBoardNuke;
   final int nukeBonus;
   final BombKind bombKind;
+  final bool showClearCele;
+  final int celeLines;
+  final bool celeAllClear;
+  final int celeBonus;
 
   _GameFx copyWith({
     int? floatingScore,
@@ -924,6 +1101,10 @@ class _GameFx {
     bool? showBoardNuke,
     int? nukeBonus,
     BombKind? bombKind,
+    bool? showClearCele,
+    int? celeLines,
+    bool? celeAllClear,
+    int? celeBonus,
   }) {
     return _GameFx(
       floatingScore: clearFloating
@@ -939,6 +1120,10 @@ class _GameFx {
       showBoardNuke: showBoardNuke ?? this.showBoardNuke,
       nukeBonus: nukeBonus ?? this.nukeBonus,
       bombKind: bombKind ?? this.bombKind,
+      showClearCele: showClearCele ?? this.showClearCele,
+      celeLines: celeLines ?? this.celeLines,
+      celeAllClear: celeAllClear ?? this.celeAllClear,
+      celeBonus: celeBonus ?? this.celeBonus,
     );
   }
 }

@@ -63,8 +63,6 @@ class _AppButtonState extends State<AppButton> {
                 _pressed.value = false;
                 sl<HapticService>().selection();
                 sl<AudioService>().playSfx(SfxType.tap);
-                // ignore: discarded_futures
-                sl<AudioService>().ensureMusicPlaying();
                 widget.onTap?.call();
               },
         onTapCancel: () => _pressed.value = false,

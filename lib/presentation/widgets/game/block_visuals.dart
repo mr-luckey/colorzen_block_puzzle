@@ -211,7 +211,7 @@ class BeatingBombEmoji extends StatelessWidget {
   Widget build(BuildContext context) {
     final emoji =
         mega ? BlockVisuals.megaBombEmoji : BlockVisuals.bombEmoji;
-    final peak = urgent ? 1.18 : 1.12;
+                    final peak = urgent ? 1.28 : 1.18;
     final box = size.clamp(10.0, 48.0);
 
     return SizedBox(
@@ -232,7 +232,7 @@ class BeatingBombEmoji extends StatelessWidget {
         .scale(
           begin: const Offset(1, 1),
           end: Offset(peak, peak),
-          duration: 100.ms,
+          duration: 140.ms,
           curve: Curves.easeOut,
         )
         .then()

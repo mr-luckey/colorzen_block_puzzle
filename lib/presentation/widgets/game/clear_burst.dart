@@ -1,12 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
+import 'package:colorzen_block_puzzle/presentation/widgets/game/perf_tier.dart';
 
-/// Confetti burst — few particles, one-shot, light on GPU.
-class ClearBurst extends StatelessWidget {
+/// Confetti burst — one CustomPaint, one-shot, light on GPU.
+class ClearBurst extends StatefulWidget {
   const ClearBurst({
     super.key,
     required this.colors,
@@ -19,119 +19,161 @@ class ClearBurst extends StatelessWidget {
   final bool intense;
 
   @override
+  State<ClearBurst> createState() => _ClearBurstState();
+}
+
+class _ClearBurstState extends State<ClearBurst>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final rng = math.Random(seed);
-    final particleCount = intense ? 18 : 14;
     return IgnorePointer(
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Soft gold bloom flash (Block Blast style).
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [
-                  Colors.white.withValues(alpha: 0.95),
-                  const Color(0xFFFFE082).withValues(alpha: 0.7),
-                  const Color(0xFFFF9800).withValues(alpha: 0.25),
-                  Colors.transparent,
-                ],
-              ),
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (context, _) {
+          return CustomPaint(
+            painter: _BurstPainter(
+              t: Curves.easeOutCubic.transform(_ctrl.value),
+              rawT: _ctrl.value,
+              colors: widget.colors,
+              seed: widget.seed,
+              count: widget.intense
+                  ? (PerfTier.instance.isLowEnd ? 12 : 18)
+                  : (PerfTier.instance.isLowEnd ? 8 : 14),
+              mode: _BurstMode.clear,
             ),
-          )
-              .animate()
-              .scale(
-                begin: const Offset(0.4, 0.4),
-                end: const Offset(4.2, 4.2),
-                duration: 420.ms,
-                curve: Curves.easeOutCubic,
-              )
-              .fadeOut(delay: 40.ms, duration: 320.ms),
-          ...List.generate(particleCount, (i) {
-            final angle =
-                (i / particleCount) * math.pi * 2 + rng.nextDouble() * 0.25;
-            final dist = 52.0 + rng.nextDouble() * 90;
-            final size = 4.0 + rng.nextDouble() * 7;
-            final color = colors[i % colors.length];
-            final isSpark = i.isEven;
-            return Align(
-              child: (isSpark
-                      ? CustomPaint(
-                          size: Size(size * 1.6, size * 1.6),
-                          painter: _SparkPainter(
-                            color: Color.lerp(color, Colors.white, 0.45)!,
-                          ),
-                        )
-                      : Container(
-                          width: size,
-                          height: size,
-                          decoration: BoxDecoration(
-                            color: color,
-                            borderRadius: BorderRadius.circular(2),
-                            boxShadow: [
-                              BoxShadow(
-                                color: color.withValues(alpha: 0.55),
-                                blurRadius: 6,
-                              ),
-                            ],
-                          ),
-                        ))
-                  .animate()
-                  .move(
-                    begin: Offset.zero,
-                    end: Offset(
-                      math.cos(angle) * dist,
-                      math.sin(angle) * dist - 14,
-                    ),
-                    duration: 420.ms,
-                    curve: Curves.easeOutCubic,
-                  )
-                  .fadeOut(delay: 80.ms, duration: 260.ms)
-                  .rotate(
-                    begin: 0,
-                    end: (rng.nextDouble() - 0.5) * 1.2,
-                    duration: 420.ms,
-                  ),
-            );
-          }),
-        ],
+            child: const SizedBox.expand(),
+          );
+        },
       ),
     );
   }
 }
 
-class _SparkPainter extends CustomPainter {
-  _SparkPainter({required this.color});
-  final Color color;
+enum _BurstMode { clear, blast }
+
+class _BurstPainter extends CustomPainter {
+  _BurstPainter({
+    required this.t,
+    required this.rawT,
+    required this.colors,
+    required this.seed,
+    required this.count,
+    required this.mode,
+  });
+
+  final double t;
+  final double rawT;
+  final List<Color> colors;
+  final int seed;
+  final int count;
+  final _BurstMode mode;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    final r = size.width / 2;
+    final origin = Offset(size.width / 2, size.height / 2);
+    final rng = math.Random(seed);
+    final fade = (1.0 - Curves.easeIn.transform((rawT - 0.12).clamp(0.0, 1.0)))
+        .clamp(0.0, 1.0);
+
+    // Core bloom.
+    final bloomR = (mode == _BurstMode.clear ? 18.0 : 14.0) * (0.4 + t * 3.8);
+    canvas.drawCircle(
+      origin,
+      bloomR,
+      Paint()
+        ..shader = RadialGradient(
+          colors: mode == _BurstMode.clear
+              ? [
+                  Colors.white.withValues(alpha: 0.95 * fade),
+                  const Color(0xFFFFE082).withValues(alpha: 0.7 * fade),
+                  const Color(0xFFFF9800).withValues(alpha: 0.25 * fade),
+                  Colors.transparent,
+                ]
+              : [
+                  Colors.white.withValues(alpha: fade),
+                  const Color(0xFFFF6D00).withValues(alpha: 0.65 * fade),
+                  Colors.transparent,
+                ],
+        ).createShader(Rect.fromCircle(center: origin, radius: bloomR)),
+    );
+
+    final palette = mode == _BurstMode.blast
+        ? [
+            const Color(0xFFFF6D00),
+            const Color(0xFFFF1744),
+            Colors.white,
+            const Color(0xFFFFE082),
+            ...colors,
+          ]
+        : colors;
+
+    for (var i = 0; i < count; i++) {
+      final angle = (i / count) * math.pi * 2 + rng.nextDouble() * 0.25;
+      final dist = (mode == _BurstMode.clear ? 52.0 : 40.0) +
+          rng.nextDouble() * (mode == _BurstMode.clear ? 90 : 72);
+      final side = (mode == _BurstMode.clear ? 4.0 : 5.0) + rng.nextDouble() * 7;
+      final color = palette[i % palette.length];
+      final px = origin.dx + math.cos(angle) * dist * t;
+      final py = origin.dy + math.sin(angle) * dist * t - (mode == _BurstMode.clear ? 14 * t : 0);
+      final rot = (rng.nextDouble() - 0.5) * 1.2 * t;
+      final a = fade;
+
+      canvas.save();
+      canvas.translate(px, py);
+      canvas.rotate(rot);
+      if (i.isEven && mode == _BurstMode.clear) {
+        _spark(
+          canvas,
+          Color.lerp(color, Colors.white, 0.45)!.withValues(alpha: a),
+          side * 0.8,
+        );
+      } else {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(center: Offset.zero, width: side, height: side),
+            const Radius.circular(2),
+          ),
+          Paint()..color = color.withValues(alpha: a),
+        );
+      }
+      canvas.restore();
+    }
+  }
+
+  void _spark(Canvas canvas, Color color, double r) {
     final path = Path();
     for (var i = 0; i < 4; i++) {
       final a = i * math.pi / 2;
       final b = a + math.pi / 4;
-      path.moveTo(cx, cy);
-      path.lineTo(cx + math.cos(a) * r, cy + math.sin(a) * r);
-      path.lineTo(cx + math.cos(b) * r * 0.28, cy + math.sin(b) * r * 0.28);
+      path
+        ..moveTo(0, 0)
+        ..lineTo(math.cos(a) * r, math.sin(a) * r)
+        ..lineTo(math.cos(b) * r * 0.28, math.sin(b) * r * 0.28);
     }
     path.close();
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.2),
-    );
     canvas.drawPath(path, Paint()..color = color);
   }
 
   @override
-  bool shouldRepaint(covariant _SparkPainter old) => old.color != color;
+  bool shouldRepaint(covariant _BurstPainter old) =>
+      old.t != t || old.rawT != rawT || old.seed != seed;
 }
 
 /// Block-Blast-style clear FX — white flash → gold bloom → shatter sparks.
@@ -166,9 +208,9 @@ class _ClearFxOverlayState extends State<ClearFxOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
-  /// ~520ms line clear — matches Block Blast flash→glow→shatter cadence.
-  static const _lineMs = 520;
-  static const _blastMs = 560;
+  /// Line clear shatter — hold a beat longer so the pop reads clearly.
+  static const _lineMs = 720;
+  static const _blastMs = 820;
 
   @override
   void initState() {
@@ -219,6 +261,8 @@ class _ClearFxOverlayState extends State<ClearFxOverlay>
           final t = Curves.easeOutCubic.transform(_ctrl.value);
           return CustomPaint(
             size: Size(widget.boardW, widget.boardW),
+            isComplex: true,
+            willChange: true,
             painter: _ClearFxPainter(
               t: t,
               rawT: _ctrl.value,
@@ -229,6 +273,9 @@ class _ClearFxOverlayState extends State<ClearFxOverlay>
               cell: widget.cell,
               gap: widget.gap,
               palette: widget.palette,
+              shards: PerfTier.instance.shatterShards,
+              sparks: PerfTier.instance.sparkles,
+              useBlur: PerfTier.instance.useBlur,
             ),
           );
         },
@@ -248,6 +295,9 @@ class _ClearFxPainter extends CustomPainter {
     required this.cell,
     required this.gap,
     required this.palette,
+    required this.shards,
+    required this.sparks,
+    required this.useBlur,
   });
 
   final double t;
@@ -259,6 +309,9 @@ class _ClearFxPainter extends CustomPainter {
   final double cell;
   final double gap;
   final ColorPalette palette;
+  final int shards;
+  final int sparks;
+  final bool useBlur;
 
   static const _gold = Color(0xFFFFE082);
   static const _hotOrange = Color(0xFFFF9800);
@@ -276,8 +329,10 @@ class _ClearFxPainter extends CustomPainter {
       final rim = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = cell * 0.18
-        ..color = _gold.withValues(alpha: 0.35 * glowAlive)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, cell * 0.45);
+        ..color = _gold.withValues(alpha: 0.35 * glowAlive);
+      if (useBlur) {
+        rim.maskFilter = MaskFilter.blur(BlurStyle.normal, cell * 0.45);
+      }
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(0, 0, size.width, size.height),
@@ -317,8 +372,8 @@ class _ClearFxPainter extends CustomPainter {
 
       // Stagger along the line — wave feel like Block Blast.
       final stagger = isBlast
-          ? ((r + c) % 5) / 5.0 * 0.14
-          : (clearedRows.contains(r) ? c / 8.0 : r / 8.0) * 0.22;
+          ? ((r + c) % 5) / 5.0 * 0.10
+          : (clearedRows.contains(r) ? c / 8.0 : r / 8.0) * 0.14;
       final local = ((rawT - stagger) / (1.0 - stagger).clamp(0.35, 1.0))
           .clamp(0.0, 1.0);
       if (local <= 0) return;
@@ -384,14 +439,15 @@ class _ClearFxPainter extends CustomPainter {
 
         // Neon-orange luminous rim (Block Blast white core + orange outline).
         if (rim > 0.02) {
-          canvas.drawRRect(
-            rect,
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = cell * 0.12 * rim
-              ..color = _rimOrange.withValues(alpha: 0.95 * rim * fade)
-              ..maskFilter = MaskFilter.blur(BlurStyle.normal, cell * 0.08),
-          );
+          final rimPaint = Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = cell * 0.12 * rim
+            ..color = _rimOrange.withValues(alpha: 0.95 * rim * fade);
+          if (useBlur) {
+            rimPaint.maskFilter =
+                MaskFilter.blur(BlurStyle.normal, cell * 0.08);
+          }
+          canvas.drawRRect(rect, rimPaint);
           canvas.drawRRect(
             rect,
             Paint()
@@ -464,21 +520,21 @@ class _ClearFxPainter extends CustomPainter {
     );
 
     // Hot travelling highlight.
-    canvas.drawRRect(
-      rrect,
-      Paint()
-        ..shader = LinearGradient(
-          begin: begin,
-          end: end,
-          colors: [
-            Colors.transparent,
-            Colors.white.withValues(alpha: 0.85 * glow),
-            _hotOrange.withValues(alpha: 0.55 * glow),
-            Colors.transparent,
-          ],
-        ).createShader(lineRect)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, cell * 0.15),
-    );
+    final hot = Paint()
+      ..shader = LinearGradient(
+        begin: begin,
+        end: end,
+        colors: [
+          Colors.transparent,
+          Colors.white.withValues(alpha: 0.85 * glow),
+          _hotOrange.withValues(alpha: 0.55 * glow),
+          Colors.transparent,
+        ],
+      ).createShader(lineRect);
+    if (useBlur) {
+      hot.maskFilter = MaskFilter.blur(BlurStyle.normal, cell * 0.15);
+    }
+    canvas.drawRRect(rrect, hot);
   }
 
   void _paintShatter(
@@ -492,7 +548,7 @@ class _ClearFxPainter extends CustomPainter {
     required bool isBlast,
   }) {
     final rng = math.Random(seed);
-    final shardCount = isBlast ? 7 : 5;
+    final shardCount = isBlast ? shards + 1 : shards;
     final ease = Curves.easeOutCubic.transform(progress);
     final alpha = (1.0 - progress) * fade;
 
@@ -523,7 +579,7 @@ class _ClearFxPainter extends CustomPainter {
     }
 
     // Tiny sparkles (4-point) — Block Blast floating stars.
-    final sparkN = isBlast ? 5 : 4;
+    final sparkN = isBlast ? sparks + 1 : sparks;
     for (var i = 0; i < sparkN; i++) {
       final angle = rng.nextDouble() * math.pi * 2;
       final dist = cell * (0.5 + rng.nextDouble() * 1.4) * ease;
@@ -553,12 +609,14 @@ class _ClearFxPainter extends CustomPainter {
       );
     }
     path.close();
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.35),
-    );
+    if (useBlur) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.35),
+      );
+    }
     canvas.drawPath(path, Paint()..color = color);
   }
 
@@ -579,7 +637,7 @@ class _ClearFxPainter extends CustomPainter {
 }
 
 /// Local explosion for conveyor bomb area blasts.
-class BlastBurst extends StatelessWidget {
+class BlastBurst extends StatefulWidget {
   const BlastBurst({
     super.key,
     required this.colors,
@@ -590,74 +648,46 @@ class BlastBurst extends StatelessWidget {
   final int seed;
 
   @override
+  State<BlastBurst> createState() => _BlastBurstState();
+}
+
+class _BlastBurstState extends State<BlastBurst>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 680),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final rng = math.Random(seed);
     return IgnorePointer(
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [
-                  Colors.white,
-                  const Color(0xFFFF6D00).withValues(alpha: 0.65),
-                  Colors.transparent,
-                ],
-              ),
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (context, _) {
+          return CustomPaint(
+            painter: _BurstPainter(
+              t: Curves.easeOutCubic.transform(_ctrl.value),
+              rawT: _ctrl.value,
+              colors: widget.colors,
+              seed: widget.seed,
+              count: PerfTier.instance.isLowEnd ? 10 : 16,
+              mode: _BurstMode.blast,
             ),
-          )
-              .animate()
-              .scale(
-                begin: const Offset(0.35, 0.35),
-                end: const Offset(3.2, 3.2),
-                duration: 380.ms,
-                curve: Curves.easeOutCubic,
-              )
-              .fadeOut(delay: 40.ms, duration: 280.ms),
-          ...List.generate(16, (i) {
-            final angle = (i / 16) * math.pi * 2 + rng.nextDouble() * 0.2;
-            final dist = 40.0 + rng.nextDouble() * 72;
-            final size = 5.0 + rng.nextDouble() * 6;
-            final color = [
-              const Color(0xFFFF6D00),
-              const Color(0xFFFF1744),
-              Colors.white,
-              const Color(0xFFFFE082),
-              ...colors,
-            ][i % (4 + colors.length)];
-            return Align(
-              child: Container(
-                width: size,
-                height: size,
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.5),
-                      blurRadius: 5,
-                    ),
-                  ],
-                ),
-              )
-                  .animate()
-                  .move(
-                    begin: Offset.zero,
-                    end: Offset(
-                      math.cos(angle) * dist,
-                      math.sin(angle) * dist,
-                    ),
-                    duration: 400.ms,
-                    curve: Curves.easeOutCubic,
-                  )
-                  .fadeOut(delay: 60.ms, duration: 240.ms),
-            );
-          }),
-        ],
+            child: const SizedBox.expand(),
+          );
+        },
       ),
     );
   }

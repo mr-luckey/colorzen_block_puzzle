@@ -116,10 +116,10 @@ class AppPalettes {
       };
 
   static String backgroundAsset(AppThemeId id) => switch (id) {
-        AppThemeId.enchantedNight => 'assets/images/bg_enchanted_night.png',
-        AppThemeId.midnightZen => 'assets/images/bg_woodland.png',
-        AppThemeId.desiRangoli => 'assets/images/bg_ocean.png',
-        AppThemeId.arcticIce => 'assets/images/bg_sunset.png',
+        AppThemeId.enchantedNight => 'assets/images/bg_enchanted_night.webp',
+        AppThemeId.midnightZen => 'assets/images/bg_woodland.webp',
+        AppThemeId.desiRangoli => 'assets/images/bg_ocean.webp',
+        AppThemeId.arcticIce => 'assets/images/bg_sunset.webp',
       };
 
   static int unlockScore(AppThemeId id) => switch (id) {
@@ -237,6 +237,8 @@ class _WoodBackgroundState extends State<WoodBackground>
   late final AnimationController _drift;
   final ValueNotifier<Offset> _tilt = ValueNotifier(Offset.zero);
 
+  String _frontAsset = '';
+
   @override
   void initState() {
     super.initState();
@@ -248,6 +250,14 @@ class _WoodBackgroundState extends State<WoodBackground>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_frontAsset.isEmpty) {
+      _frontAsset = _assetOf(widget);
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant WoodBackground oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.animated && !_drift.isAnimating) {
@@ -256,6 +266,15 @@ class _WoodBackgroundState extends State<WoodBackground>
       _drift.stop();
       _tilt.value = Offset.zero;
     }
+    final next = _assetOf(widget);
+    if (next != _frontAsset) {
+      _frontAsset = next;
+    }
+  }
+
+  String _assetOf(WoodBackground w) {
+    final id = w.themeId ?? context.read<ThemeCubit>().state.selected;
+    return AppPalettes.backgroundAsset(id);
   }
 
   @override
@@ -284,13 +303,14 @@ class _WoodBackgroundState extends State<WoodBackground>
   }) {
     final bg = Image.asset(
       asset,
+      key: ValueKey<String>('bg:$asset'),
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,
       alignment: Alignment.center,
       filterQuality: FilterQuality.low,
       gaplessPlayback: true,
-      errorBuilder: (_, __, ___) => ColoredBox(color: palette.background),
+      errorBuilder: (_, _, _) => ColoredBox(color: palette.background),
     );
 
     return Stack(
@@ -350,52 +370,71 @@ class _WoodBackgroundState extends State<WoodBackground>
           ColoredBox(color: Colors.black.withValues(alpha: 0.22)),
         if (widget.animated)
           IgnorePointer(child: ParticleBackground(palette: palette)),
-        ?widget.child,
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final id = widget.themeId ?? context.watch<ThemeCubit>().state.selected;
-    final asset = AppPalettes.backgroundAsset(id);
+    if (_frontAsset.isEmpty) {
+      _frontAsset = _assetOf(widget);
+    }
     final palette = widget.palette;
+    final asset = _frontAsset.isEmpty ? _assetOf(widget) : _frontAsset;
 
+    // Never wrap [child] in TickerMode(false) — that freezes tray scroll,
+    // drag settle, blast, and every other gameplay AnimationController.
+    late final Widget scenery;
     if (!widget.animated) {
-      return _layers(asset: asset, palette: palette);
+      scenery = TickerMode(
+        enabled: false,
+        child: _layers(asset: asset, palette: palette),
+      );
+    } else {
+      scenery = LayoutBuilder(
+        builder: (context, constraints) {
+          final size = Size(constraints.maxWidth, constraints.maxHeight);
+          return Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerHover: (e) => _onPointer(e.localPosition, size),
+            onPointerMove: (e) => _onPointer(e.localPosition, size),
+            child: AnimatedBuilder(
+              animation: Listenable.merge([_drift, _tilt]),
+              builder: (context, _) {
+                final t = _drift.value * math.pi * 2;
+                final autoX = math.sin(t) * 0.05;
+                final autoY = math.cos(t * 0.9) * 0.035;
+                final px = _tilt.value.dx;
+                final py = _tilt.value.dy;
+                return _layers(
+                  asset: _frontAsset,
+                  palette: palette,
+                  rotX: autoY + py * 0.08,
+                  rotY: autoX + px * 0.1,
+                  slide: Offset(
+                    (autoX + px * 0.25) * 18,
+                    (autoY + py * 0.25) * 14,
+                  ),
+                  px: px,
+                  py: py,
+                );
+              },
+            ),
+          );
+        },
+      );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final size = Size(constraints.maxWidth, constraints.maxHeight);
-        return Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerHover: (e) => _onPointer(e.localPosition, size),
-          onPointerMove: (e) => _onPointer(e.localPosition, size),
-          child: AnimatedBuilder(
-            animation: Listenable.merge([_drift, _tilt]),
-            builder: (context, _) {
-              final t = _drift.value * math.pi * 2;
-              final autoX = math.sin(t) * 0.05;
-              final autoY = math.cos(t * 0.9) * 0.035;
-              final px = _tilt.value.dx;
-              final py = _tilt.value.dy;
-              return _layers(
-                asset: asset,
-                palette: palette,
-                rotX: autoY + py * 0.08,
-                rotY: autoX + px * 0.1,
-                slide: Offset(
-                  (autoX + px * 0.25) * 18,
-                  (autoY + py * 0.25) * 14,
-                ),
-                px: px,
-                py: py,
-              );
-            },
-          ),
-        );
-      },
+    final child = widget.child;
+    if (child == null) return scenery;
+
+    return Stack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.hardEdge,
+      children: [
+        scenery,
+        TickerMode(enabled: true, child: child),
+      ],
     );
   }
 }

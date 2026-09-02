@@ -46,7 +46,7 @@ class PieceTray extends StatefulWidget {
 }
 
 class _PieceTrayState extends State<PieceTray>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   Ticker? _ticker;
   Duration _lastElapsed = Duration.zero;
 
@@ -62,17 +62,51 @@ class _PieceTrayState extends State<PieceTray>
   void initState() {
     super.initState();
     _hydrateFromParent();
+    WidgetsBinding.instance.addObserver(this);
+    widget.drag.interruptGen.addListener(_onDragInterrupted);
     _ticker = createTicker(_onTick)..start();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.resumed) {
+      _dragging = false;
+      _lastElapsed = Duration.zero;
+      if (!_ticker!.isActive) {
+        _ticker!.start();
+      }
+    }
+  }
+
+  void _onDragInterrupted() {
+    _dragging = false;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Parent TickerMode(false) mutes this ticker; punch through when enabled.
+    if (TickerMode.of(context)) {
+      _lastElapsed = Duration.zero;
+      if (_ticker != null && !_ticker!.isActive) {
+        _ticker!.start();
+      }
+    }
   }
 
   @override
   void didUpdateWidget(covariant PieceTray oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _syncFromParentIfNeeded();
+    _syncBelt(widget.pieces);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    widget.drag.interruptGen.removeListener(_onDragInterrupted);
     _ticker?.dispose();
     _scroll.dispose();
     _beltTick.dispose();
@@ -85,9 +119,9 @@ class _PieceTrayState extends State<PieceTray>
       ..addAll(widget.pieces.whereType<Piece>());
   }
 
-  /// Keep local belt when we recycled ahead of bloc; adopt parent on place / new game.
-  void _syncFromParentIfNeeded() {
-    final parent = widget.pieces.whereType<Piece>().toList(growable: false);
+  /// Keep local belt when we recycled ahead of bloc; patch on place.
+  void _syncBelt(List<Piece?> source) {
+    final parent = source.whereType<Piece>().toList(growable: false);
     if (parent.isEmpty) return;
     if (_belt.isEmpty) {
       _belt.addAll(parent);
@@ -98,13 +132,35 @@ class _PieceTrayState extends State<PieceTray>
     final pIds = parent.map((p) => p.id).toList(growable: false);
     final lIds = _belt.map((p) => p.id).toList(growable: false);
     if (listEquals(pIds, lIds)) return;
-
     if (_isRecycleLag(parent, _belt)) return;
 
-    _belt
-      ..clear()
-      ..addAll(parent);
-    _beltTick.value++;
+    final pSet = pIds.toSet();
+    final lSet = lIds.toSet();
+    final overlap = pSet.intersection(lSet).length;
+    if (overlap >= (_belt.length - 2).clamp(1, _belt.length)) {
+      _belt.removeWhere((p) => !pSet.contains(p.id));
+      final have = _belt.map((p) => p.id).toSet();
+      for (final p in parent) {
+        if (have.contains(p.id)) continue;
+        _belt.add(p);
+        have.add(p.id);
+      }
+      while (_belt.length > AppConstants.beltSize) {
+        _belt.removeLast();
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _beltTick.value++;
+      });
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _belt
+        ..clear()
+        ..addAll(parent);
+      _beltTick.value++;
+    });
   }
 
   /// Local already dropped parent.first and appended a new tail piece.
@@ -118,6 +174,7 @@ class _PieceTrayState extends State<PieceTray>
 
   void _onTick(Duration elapsed) {
     if (!mounted) return;
+    if (!TickerMode.of(context)) return;
     if (_lastElapsed == Duration.zero) {
       _lastElapsed = elapsed;
       return;
@@ -147,9 +204,18 @@ class _PieceTrayState extends State<PieceTray>
 
   @override
   Widget build(BuildContext context) {
-    _syncFromParentIfNeeded();
-
-    return SizedBox(
+    return BlocListener<GameBloc, GameState>(
+      listenWhen: (prev, next) {
+        if (prev is! GamePlaying || next is! GamePlaying) return false;
+        return prev.session.movesMade != next.session.movesMade ||
+            !identical(prev.session.grid, next.session.grid);
+      },
+      listener: (context, state) {
+        if (state is GamePlaying) {
+          _syncBelt(state.session.currentPieces);
+        }
+      },
+      child: SizedBox(
       height: widget.height,
       child: WoodPanel(
         palette: widget.palette,
@@ -265,11 +331,12 @@ class _PieceTrayState extends State<PieceTray>
           ),
         ),
       ),
+    ),
     );
   }
 }
 
-class _ConveyorPiece extends StatelessWidget {
+class _ConveyorPiece extends StatefulWidget {
   const _ConveyorPiece({
     super.key,
     required this.piece,
@@ -291,8 +358,36 @@ class _ConveyorPiece extends StatelessWidget {
   final VoidCallback onDragStart;
   final VoidCallback onDragEnd;
 
+  @override
+  State<_ConveyorPiece> createState() => _ConveyorPieceState();
+}
+
+class _ConveyorPieceState extends State<_ConveyorPiece> {
+  int? _pointer;
+  int _boardRetry = 0;
+
+  Piece get piece => widget.piece;
+  PieceDragController get drag => widget.drag;
+
+  @override
+  void initState() {
+    super.initState();
+    drag.interruptGen.addListener(_onInterrupted);
+  }
+
+  @override
+  void dispose() {
+    drag.interruptGen.removeListener(_onInterrupted);
+    super.dispose();
+  }
+
+  void _onInterrupted() {
+    _pointer = null;
+    _boardRetry = 0;
+  }
+
   double get _cellSize {
-    final maxDim = (trayHeight - 16) /
+    final maxDim = (widget.trayHeight - 16) /
         (piece.rows > piece.cols ? piece.rows : piece.cols.clamp(1, 5));
     return maxDim.clamp(16.0, 32.0);
   }
@@ -301,9 +396,9 @@ class _ConveyorPiece extends StatelessWidget {
     drag.update(global);
     DragMath.applyGhost(
       drag: drag,
-      board: grid,
+      board: widget.grid,
       piece: piece,
-      palette: palette,
+      palette: widget.palette,
       globalFinger: global,
     );
   }
@@ -311,53 +406,125 @@ class _ConveyorPiece extends StatelessWidget {
   void _finish(Offset global) {
     DragMath.applyGhost(
       drag: drag,
-      board: grid,
+      board: widget.grid,
       piece: piece,
-      palette: palette,
+      palette: widget.palette,
       globalFinger: global,
     );
     final g = drag.ghost.value;
     final pieceId = piece.id;
-    drag.clear();
-    onDragEnd();
+    final row = g?.row ?? 0;
+    final col = g?.col ?? 0;
+    final valid = g != null &&
+        g.valid &&
+        GameEngine.canPlace(widget.grid, piece, g.row, g.col);
 
-    if (g == null || !g.valid) {
+    if (!valid) {
+      if ((!DragMath.boardReady || drag.inResumeGrace) && _boardRetry < 6) {
+        _boardRetry++;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (drag.phase.value != DragPhase.dragging) return;
+          if (drag.piece.value?.id != pieceId) return;
+          _finish(global);
+        });
+        return;
+      }
+      _boardRetry = 0;
       sl<HapticService>().invalidShake();
       sl<AudioService>().playSfx(SfxType.invalid);
+      drag.beginCancelSettle(
+        onComplete: () {
+          drag.clear();
+          widget.onDragEnd();
+        },
+      );
       return;
     }
 
-    if (GameEngine.canPlace(grid, piece, g.row, g.col)) {
-      sl<AudioService>().playSfx(SfxType.place);
-      onDrop(pieceId, g.row, g.col);
-    } else {
-      sl<HapticService>().invalidShake();
-      sl<AudioService>().playSfx(SfxType.invalid);
+    _boardRetry = 0;
+    sl<AudioService>().playSfx(SfxType.place);
+    final target = DragMath.pieceTopLeftForAnchor(row, col);
+    if (target == null) {
+      drag.clear();
+      widget.onDragEnd();
+      widget.onDrop(pieceId, row, col);
+      return;
     }
+    drag.beginPlaceSettle(
+      targetTopLeft: target,
+      onComplete: () {
+        drag.clear();
+        widget.onDragEnd();
+        widget.onDrop(pieceId, row, col);
+      },
+    );
+  }
+
+  void _stealIfStuck() {
+    if (drag.phase.value == DragPhase.settling ||
+        drag.phase.value == DragPhase.canceling) {
+      drag.completeSettle();
+    }
+    if (drag.isDragging) {
+      drag.clear();
+      widget.onDragEnd();
+    }
+    _pointer = null;
+    _boardRetry = 0;
   }
 
   @override
   Widget build(BuildContext context) {
     final preview = PiecePreview(
       piece: piece,
-      palette: palette,
+      palette: widget.palette,
       cellSize: _cellSize,
     );
 
     return Listener(
       behavior: HitTestBehavior.opaque,
       onPointerDown: (e) {
-        onDragStart();
+        if (_pointer == e.pointer) return;
+        if (_pointer != null || drag.isDragging) {
+          _stealIfStuck();
+        }
+        _pointer = e.pointer;
+        _boardRetry = 0;
+        widget.onDragStart();
         sl<HapticService>().selection();
         sl<AudioService>().playSfx(SfxType.pickup);
-        drag.start(p: piece, index: 0, global: e.position);
+        drag.start(
+          p: piece,
+          index: 0,
+          global: e.position,
+          pointer: e.pointer,
+        );
         _onUpdate(e.position);
       },
-      onPointerMove: (e) => _onUpdate(e.position),
-      onPointerUp: (e) => _finish(e.position),
-      onPointerCancel: (_) {
-        drag.clear();
-        onDragEnd();
+      onPointerMove: (e) {
+        if (e.pointer != _pointer) return;
+        _onUpdate(e.position);
+      },
+      onPointerUp: (e) {
+        if (e.pointer != _pointer) return;
+        _pointer = null;
+        _finish(e.position);
+      },
+      onPointerCancel: (e) {
+        if (_pointer != null && e.pointer != _pointer) return;
+        _pointer = null;
+        _boardRetry = 0;
+        if (drag.phase.value == DragPhase.settling ||
+            drag.phase.value == DragPhase.canceling) {
+          drag.completeSettle();
+          return;
+        }
+        if (drag.isDragging &&
+            (drag.activePointer == null || drag.activePointer == e.pointer)) {
+          drag.clear();
+          widget.onDragEnd();
+        }
       },
       child: SizedBox.expand(
         child: Center(child: preview),

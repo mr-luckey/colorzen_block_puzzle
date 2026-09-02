@@ -118,6 +118,7 @@ class GameSession extends Equatable {
     this.activeSurviveMs = 0,
     this.lastMoveEpochMs,
     this.timeBomb,
+    this.playfieldBgIndex = 0,
   });
 
   final GameMode mode;
@@ -146,6 +147,9 @@ class GameSession extends Equatable {
   /// Active combo time-bomb (null = none).
   final TimeBomb? timeBomb;
 
+  /// Unused leftover from old Hive saves (always 0).
+  final int playfieldBgIndex;
+
   static List<List<BlockColor?>> emptyGrid() => List.generate(
         9,
         (_) => List<BlockColor?>.filled(9, null),
@@ -172,6 +176,7 @@ class GameSession extends Equatable {
     int? activeSurviveMs,
     int? lastMoveEpochMs,
     TimeBomb? timeBomb,
+    int? playfieldBgIndex,
     bool clearLastMove = false,
     bool clearBomb = false,
   }) {
@@ -194,6 +199,7 @@ class GameSession extends Equatable {
           ? null
           : (lastMoveEpochMs ?? this.lastMoveEpochMs),
       timeBomb: clearBomb ? null : (timeBomb ?? this.timeBomb),
+      playfieldBgIndex: playfieldBgIndex ?? this.playfieldBgIndex,
     );
   }
 
@@ -215,6 +221,7 @@ class GameSession extends Equatable {
         'movesMade': movesMade,
         'activeSurviveMs': activeSurviveMs,
         'timeBomb': timeBomb?.toMap(),
+        'playfieldBgIndex': playfieldBgIndex,
       };
 
   factory GameSession.fromMap(Map<dynamic, dynamic> map) {
@@ -260,6 +267,7 @@ class GameSession extends Equatable {
       timeBomb: bombRaw is Map
           ? TimeBomb.fromMap(Map<dynamic, dynamic>.from(bombRaw))
           : null,
+      playfieldBgIndex: _asInt(map['playfieldBgIndex']),
     );
   }
 
@@ -280,6 +288,7 @@ class GameSession extends Equatable {
         activeSurviveMs,
         lastMoveEpochMs,
         timeBomb,
+        playfieldBgIndex,
       ];
 }
 
@@ -538,7 +547,7 @@ class LifetimeStats extends Equatable {
 }
 
 /// How strong a move praise should feel.
-enum MovePraise { none, nice, great, awesome, legendary }
+enum MovePraise { none, nice, great, awesome, legendary, allClear }
 
 enum RankTier { rookie, climber, survivor, champion, legend }
 

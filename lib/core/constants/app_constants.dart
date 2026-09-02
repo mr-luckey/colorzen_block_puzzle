@@ -6,7 +6,7 @@ class IapConstants {
 class AppConstants {
   static const String appName = 'ColorZen';
   static const String tagline = 'Place. Clear. Zen.';
-  static const String appLogoAsset = 'assets/images/app_logo.png';
+  static const String appLogoAsset = 'assets/images/app_logo.webp';
   static const String packageId = 'com.appwaretech.colorzen.puzzle';
   static const int gridSize = 9;
   /// Pieces on the infinite horizontal conveyor belt.
@@ -18,8 +18,16 @@ class AppConstants {
   static const int bombEveryMax = 8;
   /// Timer starts only after the bomb piece is placed on the board.
   static const int bombDurationSec = 15;
+  /// Must clear ≥1 line before this elapses; resets to full on a line blast.
+  static const int surviveTimerSec = 30;
+  /// Last seconds: red pulse + countdown tick.
+  static const int surviveWarningSec = 10;
+  /// Extra survive time after a rewarded ad on the time-up screen.
+  static const int surviveAdBonusSec = 20;
   /// Conveyor bomb blast radius (Chebyshev) — e.g. 2 → up to 5×5 area.
   static const int bombAreaRadius = 2;
+  /// After a full-board empty (all lines gone) — Block Blast dopamine.
+  static const int allClearBonus = 5000;
   /// Flat bonus when combo bomb wipes the whole board.
   static const int bombBoardClearBonus = 2500;
   /// Flat bonus when conveyor bomb blasts a local area.

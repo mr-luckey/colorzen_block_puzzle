@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -46,6 +48,14 @@ class GameReset extends GameEvent {
   const GameReset();
 }
 
+class GamePaused extends GameEvent {
+  const GamePaused();
+}
+
+class GameResumed extends GameEvent {
+  const GameResumed();
+}
+
 class BombExpired extends GameEvent {
   const BombExpired();
 }
@@ -55,6 +65,22 @@ class ConveyorRecycled extends GameEvent {
   final Piece newPiece;
   @override
   List<Object?> get props => [newPiece];
+}
+
+class SanitizeBelt extends GameEvent {
+  const SanitizeBelt();
+}
+
+class SurviveClockTicked extends GameEvent {
+  const SurviveClockTicked();
+}
+
+class SurviveExtraTimeGranted extends GameEvent {
+  const SurviveExtraTimeGranted();
+}
+
+class SurviveGiveUp extends GameEvent {
+  const SurviveGiveUp();
 }
 
 // ── States ──────────────────────────────────────────────────────────
@@ -88,6 +114,9 @@ class GamePlaying extends GameState {
     this.bombSpawned = false,
     this.boardNuked = false,
     this.bombDefused = false,
+    this.allClear = false,
+    this.linesJustCleared = 0,
+    this.surviveRemainingMs = 0,
   });
 
   final GameSession session;
@@ -105,6 +134,51 @@ class GamePlaying extends GameState {
   final bool bombSpawned;
   final bool boardNuked;
   final bool bombDefused;
+  /// True when the board has zero blocks left after this move.
+  final bool allClear;
+  /// Rows+cols popped this move (for 4 / 6 / 9 callouts).
+  final int linesJustCleared;
+
+  /// Line-clear survive clock (HUD only — parent buildWhen ignores this).
+  final int surviveRemainingMs;
+
+  GamePlaying copyWith({
+    GameSession? session,
+    int? lastScoreGained,
+    List<int>? clearedRows,
+    List<int>? clearedCols,
+    bool? hadColorBonus,
+    bool? showCombo,
+    List<(int, int)>? placementAnimCells,
+    List<(int, int)>? blastCells,
+    Map<(int, int), BlockColor>? clearFxColors,
+    MovePraise? praise,
+    bool? bombSpawned,
+    bool? boardNuked,
+    bool? bombDefused,
+    bool? allClear,
+    int? linesJustCleared,
+    int? surviveRemainingMs,
+  }) {
+    return GamePlaying(
+      session ?? this.session,
+      lastScoreGained: lastScoreGained ?? this.lastScoreGained,
+      clearedRows: clearedRows ?? this.clearedRows,
+      clearedCols: clearedCols ?? this.clearedCols,
+      hadColorBonus: hadColorBonus ?? this.hadColorBonus,
+      showCombo: showCombo ?? this.showCombo,
+      placementAnimCells: placementAnimCells ?? this.placementAnimCells,
+      blastCells: blastCells ?? this.blastCells,
+      clearFxColors: clearFxColors ?? this.clearFxColors,
+      praise: praise ?? this.praise,
+      bombSpawned: bombSpawned ?? this.bombSpawned,
+      boardNuked: boardNuked ?? this.boardNuked,
+      bombDefused: bombDefused ?? this.bombDefused,
+      allClear: allClear ?? this.allClear,
+      linesJustCleared: linesJustCleared ?? this.linesJustCleared,
+      surviveRemainingMs: surviveRemainingMs ?? this.surviveRemainingMs,
+    );
+  }
 
   @override
   List<Object?> get props => [
@@ -121,7 +195,18 @@ class GamePlaying extends GameState {
         bombSpawned,
         boardNuked,
         bombDefused,
+        allClear,
+        linesJustCleared,
+        surviveRemainingMs,
       ];
+}
+
+class GameTimeUpState extends GameState {
+  const GameTimeUpState(this.session, {required this.isNewBest});
+  final GameSession session;
+  final bool isNewBest;
+  @override
+  List<Object?> get props => [session, isNewBest];
 }
 
 class GameOverState extends GameState {
@@ -154,8 +239,14 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     on<GameStarted>(_onStarted);
     on<PiecePlaced>(_onPiecePlaced);
     on<GameReset>(_onReset);
+    on<GamePaused>(_onPaused);
+    on<GameResumed>(_onResumed);
     on<BombExpired>(_onBombExpired);
     on<ConveyorRecycled>(_onConveyorRecycled);
+    on<SanitizeBelt>(_onSanitizeBelt);
+    on<SurviveClockTicked>(_onSurviveClockTicked);
+    on<SurviveExtraTimeGranted>(_onSurviveExtraTimeGranted);
+    on<SurviveGiveUp>(_onSurviveGiveUp);
   }
 
   final GameRepository _repo;
@@ -168,11 +259,63 @@ class GameBloc extends Bloc<GameEvent, GameState> {
 
   GameMode? _mode;
 
+  Timer? _surviveClock;
+  int _surviveDeadlineMs = 0;
+  int _lastSurviveSec = AppConstants.surviveTimerSec;
+  bool _paused = false;
+  int _pausedRemainMs = 0;
+  int? _pauseStartedMs;
+
+  int _remainMs() {
+    final left =
+        _surviveDeadlineMs - DateTime.now().millisecondsSinceEpoch;
+    return left < 0 ? 0 : left;
+  }
+
+  void _armSurvive(int seconds) => _armSurviveMs(seconds * 1000);
+
+  void _armSurviveMs(int ms) {
+    if (ms <= 0) {
+      _stopSurviveClock();
+      return;
+    }
+    _surviveDeadlineMs = DateTime.now().millisecondsSinceEpoch + ms;
+    _lastSurviveSec = (ms / 1000).ceil();
+    _surviveClock?.cancel();
+    _surviveClock = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      add(const SurviveClockTicked());
+    });
+  }
+
+  void _stopSurviveClock() {
+    _surviveClock?.cancel();
+    _surviveClock = null;
+  }
+
+  GamePlaying _stampClock(GamePlaying playing) {
+    if (_paused) {
+      return playing.copyWith(
+        surviveRemainingMs: _pausedRemainMs > 0
+            ? _pausedRemainMs
+            : playing.surviveRemainingMs,
+      );
+    }
+    return playing.copyWith(
+      surviveRemainingMs: _surviveClock != null
+          ? _remainMs()
+          : AppConstants.surviveTimerSec * 1000,
+    );
+  }
+
   Future<void> _onStarted(
     GameStarted event,
     Emitter<GameState> emit,
   ) async {
     emit(const GameLoading());
+    _paused = false;
+    _pausedRemainMs = 0;
+    _pauseStartedMs = null;
+    _stopSurviveClock();
     _mode = event.mode;
     _configureGenerator(event.mode);
 
@@ -253,7 +396,8 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     }
 
     await _repo.saveSession(session);
-    emit(GamePlaying(session));
+    _stopSurviveClock();
+    emit(_stampClock(GamePlaying(session)));
   }
 
   void _configureGenerator(GameMode mode) {
@@ -320,9 +464,21 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     _pieceGen.setBoardFillRatio(_countFilled(session.grid) / 81.0);
     final existing = session.currentPieces.whereType<Piece>().toList();
     final fromNext = session.nextPieces;
-    final pool = [...existing, ...fromNext];
-    while (pool.length < AppConstants.beltSize) {
-      pool.add(_pieceGen.nextConveyorPiece());
+    var pool = [...existing, ...fromNext];
+    final tiny = pool.where((p) => p.blockCount <= 1).length;
+    // Old saves were full of 1-blocks — throw the belt out and rebuild.
+    if (pool.isEmpty || tiny >= 2) {
+      pool = List.generate(
+        AppConstants.beltSize,
+        (_) => _pieceGen.nextConveyorPiece(),
+      );
+    } else {
+      pool = pool
+          .map((p) => p.blockCount <= 1 ? _pieceGen.nextConveyorPiece() : p)
+          .toList();
+      while (pool.length < AppConstants.beltSize) {
+        pool.add(_pieceGen.nextConveyorPiece());
+      }
     }
     var belt = pool.take(AppConstants.beltSize).toList();
     if (session.mode == GameMode.zen) {
@@ -341,6 +497,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     PiecePlaced event,
     Emitter<GameState> emit,
   ) async {
+    if (_paused) return;
     final current = state;
     if (current is! GamePlaying) return;
     final session = current.session;
@@ -424,12 +581,6 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     );
     final movesMade = session.movesMade + 1;
     final hadColorBonus = clearResult.colorBonusFlags.any((b) => b);
-    final praise = RankingEngine.praiseFor(
-      linesCleared: lines,
-      consecutiveClearMoves: consecutive,
-      hadColorBonus: hadColorBonus,
-      scoreGained: gained,
-    );
 
     var workingGrid = clearResult.grid;
     var bomb = session.timeBomb;
@@ -561,11 +712,11 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       bomb = null;
     }
 
-    // 2+ lines in one move → spawn a combo (full-wipe) bomb on a filled cell.
+    // 2+ lines in one move → always arm the mega (full-wipe) fire bomb.
+    final uniqueLines = {...animRows}.length + {...animCols}.length;
     if (!bombDefused &&
-        bomb == null &&
-        lines >= 2 &&
-        session.mode != GameMode.zen) {
+        session.mode != GameMode.zen &&
+        (lines >= 2 || uniqueLines >= 2)) {
       final armed = _spawnComboBomb(workingGrid, nowMs);
       if (armed != null) {
         bomb = armed;
@@ -576,13 +727,48 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       }
     }
 
+    final calloutLines = boardNuked
+        ? 9
+        : ({...animRows}.length + {...animCols}.length);
+    // Any move that empties a board that had blocks — line clear, combo
+    // nuke, or area blast — is an all-clear (bonus + celebration only).
+    final emptiedBoard = _countFilled(workingGrid) == 0 &&
+        _countFilled(session.grid) > 0;
+    final allClear = emptiedBoard;
+    if (allClear && scoringEnabled) {
+      gained += (AppConstants.allClearBonus * modeMultiplier).round();
+    }
+    if (allClear) {
+      _haptics.heavy();
+      // ignore: discarded_futures
+      _audio.playSfx(SfxType.combo);
+    } else if (calloutLines >= 4) {
+      _haptics.heavy();
+      if (consecutive < 3) {
+        // ignore: discarded_futures
+        _audio.playSfx(SfxType.combo);
+      }
+    }
+
+    var praise = RankingEngine.praiseFor(
+      linesCleared: calloutLines > 0 ? calloutLines : lines,
+      consecutiveClearMoves: consecutive,
+      hadColorBonus: hadColorBonus,
+      scoreGained: gained,
+      allClear: allClear,
+    );
+    if (praise == MovePraise.none && blastCells.isNotEmpty) {
+      praise = MovePraise.great;
+    }
+
     final newTray = List<Piece?>.from(session.currentPieces);
     // Remove used piece and append a fresh one — infinite conveyor.
     if (trayIndex >= 0 && trayIndex < newTray.length) {
       newTray.removeAt(trayIndex);
     }
+    final filledNow = _countFilled(workingGrid);
     _pieceGen.setBoard(workingGrid);
-    _pieceGen.setBoardFillRatio(_countFilled(workingGrid) / 81.0);
+    _pieceGen.setBoardFillRatio(filledNow / 81.0);
     newTray.add(_pieceGen.nextConveyorPiece());
     while (newTray.length < AppConstants.beltSize) {
       newTray.add(_pieceGen.nextConveyorPiece());
@@ -597,6 +783,10 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     final newScore = session.score + gained;
     final newBest = newScore > session.bestScore ? newScore : session.bestScore;
     final comboCount = consecutive >= 3 ? consecutive : 0;
+
+    if (lines >= 1 || allClear || boardNuked) {
+      _armSurvive(AppConstants.surviveTimerSec);
+    }
 
     var newSession = session.copyWith(
       grid: workingGrid,
@@ -625,7 +815,8 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       // Silent reset for zen
       final reset = _createNewSession(GameMode.zen, 0);
       await _repo.saveSession(reset);
-      emit(GamePlaying(reset));
+      _stopSurviveClock();
+      emit(_stampClock(GamePlaying(reset)));
       return;
     }
 
@@ -635,6 +826,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       await _updateStatsOnGameOver(newSession);
       _haptics.heavy();
       await _audio.playSfx(SfxType.gameOver);
+      _stopSurviveClock();
 
       if (session.mode == GameMode.daily) {
         await _repo.saveDaily(
@@ -647,23 +839,27 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       }
 
       emit(
-        GamePlaying(
-          newSession,
-          lastScoreGained: gained,
-          clearedRows: animRows,
-          clearedCols: animCols,
-          hadColorBonus: hadColorBonus,
-          showCombo: consecutive >= 3 && lines > 0,
-          placementAnimCells: placementCells,
-          blastCells: blastCells,
-          clearFxColors: clearFxColors,
-          praise: boardNuked ? MovePraise.legendary : praise,
-          bombSpawned: bombSpawned,
-          boardNuked: boardNuked,
-          bombDefused: bombDefused,
+        _stampClock(
+          GamePlaying(
+            newSession,
+            lastScoreGained: gained,
+            clearedRows: animRows,
+            clearedCols: animCols,
+            hadColorBonus: hadColorBonus,
+            showCombo: consecutive >= 3 && lines > 0,
+            placementAnimCells: placementCells,
+            blastCells: blastCells,
+            clearFxColors: clearFxColors,
+            praise: praise,
+            bombSpawned: bombSpawned,
+            boardNuked: boardNuked,
+            bombDefused: bombDefused,
+            allClear: allClear,
+            linesJustCleared: calloutLines,
+          ),
         ),
       );
-      await Future<void>.delayed(const Duration(milliseconds: 520));
+      await Future<void>.delayed(const Duration(milliseconds: 720));
       emit(
         GameOverState(
           newSession,
@@ -676,26 +872,28 @@ class GameBloc extends Bloc<GameEvent, GameState> {
 
     // Emit clear FX first — persist in background so anim isn't delayed.
     emit(
-      GamePlaying(
-        newSession,
-        lastScoreGained: gained,
-        clearedRows: boardNuked
-            ? List.generate(9, (i) => i)
-            : animRows,
-        clearedCols: boardNuked
-            ? List.generate(9, (i) => i)
-            : animCols,
-        hadColorBonus: hadColorBonus,
-        showCombo: consecutive >= 3 && lines > 0,
-        placementAnimCells: placementCells,
-        blastCells: blastCells,
-        clearFxColors: clearFxColors,
-        praise: boardNuked
-            ? MovePraise.legendary
-            : (blastCells.isNotEmpty ? MovePraise.great : praise),
-        bombSpawned: bombSpawned,
-        boardNuked: boardNuked,
-        bombDefused: bombDefused,
+      _stampClock(
+        GamePlaying(
+          newSession,
+          lastScoreGained: gained,
+          clearedRows: boardNuked
+              ? List.generate(9, (i) => i)
+              : animRows,
+          clearedCols: boardNuked
+              ? List.generate(9, (i) => i)
+              : animCols,
+          hadColorBonus: hadColorBonus,
+          showCombo: consecutive >= 3 && lines > 0,
+          placementAnimCells: placementCells,
+          blastCells: blastCells,
+          clearFxColors: clearFxColors,
+          praise: praise,
+          bombSpawned: bombSpawned,
+          boardNuked: boardNuked,
+          bombDefused: bombDefused,
+          allClear: allClear,
+          linesJustCleared: calloutLines,
+        ),
       ),
     );
 
@@ -708,14 +906,14 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     // ignore: discarded_futures
     _maybeUnlockThemes(newSession);
 
-    // Clear line-flash flags after Block-Blast-length FX (~520ms).
+    // Clear line-flash flags after Block-Blast-length FX.
     final settleMoves = movesMade;
-    await Future<void>.delayed(const Duration(milliseconds: 520));
+    await Future<void>.delayed(const Duration(milliseconds: 720));
     final after = state;
     if (after is GamePlaying &&
         after.session.movesMade == settleMoves &&
         !after.session.isGameOver) {
-      emit(GamePlaying(after.session));
+      emit(_stampClock(GamePlaying(after.session)));
     }
   }
 
@@ -780,6 +978,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     BombExpired event,
     Emitter<GameState> emit,
   ) async {
+    if (_paused) return;
     final current = state;
     if (current is! GamePlaying) return;
     final bomb = current.session.timeBomb;
@@ -787,7 +986,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     if (!bomb.isExpired) return;
     final next = current.session.copyWith(clearBomb: true);
     await _repo.saveSession(next);
-    emit(GamePlaying(next));
+    emit(_stampClock(GamePlaying(next)));
   }
 
   /// Leftmost piece scrolled off → drop it, append the piece tray already generated.
@@ -795,6 +994,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     ConveyorRecycled event,
     Emitter<GameState> emit,
   ) async {
+    if (_paused) return;
     final current = state;
     if (current is! GamePlaying) return;
     final session = current.session;
@@ -807,8 +1007,6 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       fresh = fresh.copyWith(isBomb: false);
     }
     tray.add(fresh);
-    _pieceGen.setBoard(session.grid);
-    _pieceGen.setBoardFillRatio(_countFilled(session.grid) / 81.0);
     while (tray.length < AppConstants.beltSize) {
       tray.add(_pieceGen.nextConveyorPiece());
     }
@@ -816,9 +1014,34 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       currentPieces: tray.take(AppConstants.beltSize).toList(),
       nextPieces: const [],
     );
-    emit(GamePlaying(next));
-    // Don't block the conveyor on disk I/O (was causing scroll flicker).
-    // ignore: unawaited_futures
+    emit(_stampClock(GamePlaying(next)));
+  }
+
+  Future<void> _onSanitizeBelt(
+    SanitizeBelt event,
+    Emitter<GameState> emit,
+  ) async {
+    final current = state;
+    if (current is! GamePlaying) return;
+    final session = current.session;
+    final pieces = session.currentPieces.whereType<Piece>().toList();
+    final tiny = pieces.where((p) => p.blockCount <= 1).length;
+    if (tiny < 2) return;
+    _pieceGen.setBoard(session.grid);
+    _pieceGen.setBoardFillRatio(_countFilled(session.grid) / 81.0);
+    var belt = List.generate(
+      AppConstants.beltSize,
+      (_) => _pieceGen.nextConveyorPiece(),
+    );
+    if (session.mode == GameMode.zen) {
+      belt = belt.map((p) => p.copyWith(isBomb: false)).toList();
+    }
+    final next = session.copyWith(
+      currentPieces: belt,
+      nextPieces: const [],
+    );
+    emit(_stampClock(GamePlaying(next)));
+    // ignore: discarded_futures
     _repo.saveSession(next);
   }
 
@@ -892,7 +1115,69 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     await _repo.saveRanking(RankingEngine.insertRun(board, entry));
   }
 
+  Future<void> _onPaused(
+    GamePaused event,
+    Emitter<GameState> emit,
+  ) async {
+    if (_paused) return;
+    _paused = true;
+    _pauseStartedMs = DateTime.now().millisecondsSinceEpoch;
+    if (_surviveClock != null) {
+      _pausedRemainMs = _remainMs();
+      _stopSurviveClock();
+    } else {
+      _pausedRemainMs = 0;
+    }
+    final current = state;
+    if (current is GamePlaying) {
+      emit(
+        current.copyWith(
+          surviveRemainingMs: _pausedRemainMs > 0
+              ? _pausedRemainMs
+              : current.surviveRemainingMs,
+        ),
+      );
+    }
+  }
+
+  Future<void> _onResumed(
+    GameResumed event,
+    Emitter<GameState> emit,
+  ) async {
+    if (!_paused) return;
+    final pauseMs = DateTime.now().millisecondsSinceEpoch -
+        (_pauseStartedMs ?? DateTime.now().millisecondsSinceEpoch);
+    _paused = false;
+    _pauseStartedMs = null;
+    if (_pausedRemainMs > 0) {
+      _armSurviveMs(_pausedRemainMs);
+    }
+    _pausedRemainMs = 0;
+
+    final current = state;
+    if (current is! GamePlaying) return;
+
+    var session = current.session;
+    final bomb = session.timeBomb;
+    if (bomb != null && pauseMs > 0) {
+      session = session.copyWith(
+        timeBomb: TimeBomb(
+          row: bomb.row,
+          col: bomb.col,
+          expiresAtMs: bomb.expiresAtMs + pauseMs,
+          color: bomb.color,
+          kind: bomb.kind,
+        ),
+      );
+    }
+    emit(_stampClock(current.copyWith(session: session)));
+  }
+
   Future<void> _onReset(GameReset event, Emitter<GameState> emit) async {
+    _paused = false;
+    _pausedRemainMs = 0;
+    _pauseStartedMs = null;
+    _stopSurviveClock();
     final mode = _mode ?? GameMode.classic;
     emit(const GameLoading());
     _configureGenerator(mode);
@@ -905,6 +1190,94 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     final session = _createNewSession(mode, best);
     await _repo.clearSession(mode);
     await _repo.saveSession(session);
-    emit(GamePlaying(session));
+    _stopSurviveClock();
+    emit(_stampClock(GamePlaying(session)));
+  }
+
+  Future<void> _onSurviveClockTicked(
+    SurviveClockTicked event,
+    Emitter<GameState> emit,
+  ) async {
+    if (_paused) return;
+    final current = state;
+    if (current is! GamePlaying) return;
+    if (_surviveClock == null) return;
+    if (current.session.isGameOver) {
+      _stopSurviveClock();
+      return;
+    }
+    final left = _remainMs();
+    if (left <= 0) {
+      _stopSurviveClock();
+      _haptics.heavy();
+      // ignore: discarded_futures
+      _audio.playSfx(SfxType.gameOver);
+      emit(
+        GameTimeUpState(
+          current.session,
+          isNewBest: current.session.score > current.session.bestScore &&
+              current.session.score > 0 &&
+              current.session.mode != GameMode.zen,
+        ),
+      );
+      return;
+    }
+    final sec = (left / 1000).ceil();
+    if (sec != _lastSurviveSec) {
+      if (sec <= AppConstants.surviveWarningSec &&
+          sec >= 1 &&
+          sec < _lastSurviveSec) {
+        // ignore: discarded_futures
+        _audio.playSfx(SfxType.tick);
+      }
+      _lastSurviveSec = sec;
+    }
+    emit(current.copyWith(surviveRemainingMs: left));
+  }
+
+  Future<void> _onSurviveExtraTimeGranted(
+    SurviveExtraTimeGranted event,
+    Emitter<GameState> emit,
+  ) async {
+    final session = switch (state) {
+      GameTimeUpState(:final session) => session,
+      GamePlaying(:final session) => session,
+      _ => null,
+    };
+    if (session == null || session.isGameOver) return;
+    _armSurvive(AppConstants.surviveAdBonusSec);
+    emit(_stampClock(GamePlaying(session)));
+  }
+
+  Future<void> _onSurviveGiveUp(
+    SurviveGiveUp event,
+    Emitter<GameState> emit,
+  ) async {
+    final session = switch (state) {
+      GameTimeUpState(:final session) => session,
+      GamePlaying(:final session) => session,
+      _ => null,
+    };
+    if (session == null) return;
+    _stopSurviveClock();
+    final ended = session.copyWith(isGameOver: true);
+    await _repo.saveSession(ended);
+    await _updateStatsOnGameOver(ended);
+    if (ended.mode == GameMode.daily) {
+      await _repo.saveDaily(
+        DailyChallengeRecord(
+          date: HiveGameRepository.todayKey(),
+          completed: true,
+          score: ended.score,
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<void> close() {
+    _paused = false;
+    _stopSurviveClock();
+    return super.close();
   }
 }

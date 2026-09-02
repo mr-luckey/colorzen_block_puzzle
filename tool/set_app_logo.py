@@ -82,8 +82,8 @@ def main() -> None:
     IOS_ICONSET.mkdir(parents=True, exist_ok=True)
 
     logo = to_square(remove_outer_black(Image.open(SRC)))
-    logo_path = IMAGES / "app_logo.png"
-    logo.save(logo_path, "PNG")
+    logo_path = IMAGES / "app_logo.webp"
+    logo.save(logo_path, "WEBP", quality=82, method=6)
     print(f"saved {logo_path} {logo.size} mode={logo.mode}")
 
     master = logo.resize((1024, 1024), Image.Resampling.LANCZOS)

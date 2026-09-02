@@ -2,10 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
-import 'package:colorzen_block_puzzle/presentation/widgets/game/block_visuals.dart';
+import 'package:colorzen_block_puzzle/presentation/widgets/game/block_painter.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/bomb_widgets.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/clear_burst.dart';
 
@@ -54,62 +53,6 @@ class BoardSnap {
   static double gap = BoardMetrics.cellGap;
 
   static double get stride => cell + gap;
-}
-
-class GridCell extends StatelessWidget {
-  const GridCell({
-    super.key,
-    required this.size,
-    this.color,
-    this.placing = false,
-    required this.palette,
-  });
-
-  final double size;
-  final BlockColor? color;
-  final bool placing;
-  final ColorPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = size.clamp(0.0, 1000.0);
-    final radius = s * 0.2;
-    Widget child;
-
-    if (color == null) {
-      child = DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(radius),
-          color: palette.cellEmpty.withValues(alpha: 0.55),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.08),
-          ),
-        ),
-      );
-    } else {
-      child = BlockVisuals.glassBlock(
-        size: s,
-        base: palette.blockColor(color!),
-        emoji: BlockVisuals.emojiFor(color!),
-      );
-    }
-
-    child = SizedBox(width: s, height: s, child: child);
-
-    // Placement pop only — clear/blast FX live in ClearFxOverlay (1 controller).
-    if (placing) {
-      child = child
-          .animate()
-          .scale(
-            begin: const Offset(0.55, 0.55),
-            end: const Offset(1.0, 1.0),
-            duration: 90.ms,
-            curve: Curves.easeOut,
-          );
-    }
-
-    return child;
-  }
 }
 
 class GameGrid extends StatelessWidget {
@@ -197,7 +140,7 @@ class GameGrid extends StatelessWidget {
                     height: boardW,
                     child: Stack(
                       children: [
-                        // Stable board — does NOT rebuild on every drag move.
+                        // Stable board — one CustomPaint layer (no 81 widgets).
                         RepaintBoundary(
                           child: _BoardCells(
                             grid: grid,
@@ -205,10 +148,17 @@ class GameGrid extends StatelessWidget {
                             cell: safeCell,
                             gap: gap,
                             boardW: boardW,
-                            placementCells: placementCells,
                             timeBomb: timeBomb,
                           ),
                         ),
+                        if (placementCells.isNotEmpty)
+                          _PlacementPunchOverlay(
+                            key: ValueKey('place_${placementCells.join()}'),
+                            cells: placementCells,
+                            cell: safeCell,
+                            gap: gap,
+                            boardW: boardW,
+                          ),
                         if (clearedRows.isNotEmpty ||
                             clearedCols.isNotEmpty ||
                             blastCells.isNotEmpty ||
@@ -257,7 +207,6 @@ class _BoardCells extends StatelessWidget {
     required this.cell,
     required this.gap,
     required this.boardW,
-    required this.placementCells,
     this.timeBomb,
   });
 
@@ -266,53 +215,185 @@ class _BoardCells extends StatelessWidget {
   final double cell;
   final double gap;
   final double boardW;
-  final List<(int, int)> placementCells;
   final TimeBomb? timeBomb;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: List.generate(9, (r) {
-        return Padding(
-          padding: EdgeInsets.only(bottom: r == 8 ? 0 : gap),
-          child: SizedBox(
+    final bomb = timeBomb;
+    final armed = bomb != null && grid[bomb.row][bomb.col] != null;
+    final stride = cell + gap;
+
+    return Stack(
+      children: [
+        CustomPaint(
+          size: Size(boardW, boardW),
+          isComplex: true,
+          painter: _BoardPainter(
+            grid: grid,
+            palette: palette,
+            cell: cell,
+            gap: gap,
+            skipBombRow: armed ? bomb.row : null,
+            skipBombCol: armed ? bomb.col : null,
+          ),
+        ),
+        if (bomb != null && armed)
+          Positioned(
+            left: bomb.col * stride,
+            top: bomb.row * stride,
+            width: cell,
             height: cell,
-            width: boardW,
-            child: Row(
-              children: List.generate(9, (c) {
-                final isBomb = timeBomb != null &&
-                    timeBomb!.row == r &&
-                    timeBomb!.col == c &&
-                    grid[r][c] != null;
-
-                final child = isBomb
-                    ? BombCell(
-                        size: cell,
-                        bomb: timeBomb!,
-                        palette: palette,
-                      )
-                    : GridCell(
-                        size: cell,
-                        color: grid[r][c],
-                        placing: placementCells.contains((r, c)),
-                        palette: palette,
-                      );
-
-                return Padding(
-                  padding: EdgeInsets.only(right: c == 8 ? 0 : gap),
-                  child: SizedBox(
-                    width: cell,
-                    height: cell,
-                    child: child,
-                  ),
-                );
-              }),
+            child: BombCell(
+              size: cell,
+              bomb: bomb,
+              palette: palette,
             ),
           ),
-        );
-      }),
+      ],
     );
   }
+}
+
+class _BoardPainter extends CustomPainter {
+  _BoardPainter({
+    required this.grid,
+    required this.palette,
+    required this.cell,
+    required this.gap,
+    this.skipBombRow,
+    this.skipBombCol,
+  });
+
+  final List<List<BlockColor?>> grid;
+  final ColorPalette palette;
+  final double cell;
+  final double gap;
+  final int? skipBombRow;
+  final int? skipBombCol;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    BlockPainter.paintBoard(
+      canvas,
+      grid: grid,
+      palette: palette,
+      cell: cell,
+      gap: gap,
+      skipBombRow: skipBombRow,
+      skipBombCol: skipBombCol,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _BoardPainter old) {
+    return old.grid != grid ||
+        old.palette != palette ||
+        old.cell != cell ||
+        old.gap != gap ||
+        old.skipBombRow != skipBombRow ||
+        old.skipBombCol != skipBombCol;
+  }
+}
+
+/// Brief land punch — one controller, no per-cell widget animations.
+class _PlacementPunchOverlay extends StatefulWidget {
+  const _PlacementPunchOverlay({
+    super.key,
+    required this.cells,
+    required this.cell,
+    required this.gap,
+    required this.boardW,
+  });
+
+  final List<(int, int)> cells;
+  final double cell;
+  final double gap;
+  final double boardW;
+
+  @override
+  State<_PlacementPunchOverlay> createState() => _PlacementPunchOverlayState();
+}
+
+class _PlacementPunchOverlayState extends State<_PlacementPunchOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 140),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (context, _) {
+          return CustomPaint(
+            size: Size(widget.boardW, widget.boardW),
+            painter: _PlacementPunchPainter(
+              t: Curves.easeOutCubic.transform(_ctrl.value),
+              cells: widget.cells,
+              cell: widget.cell,
+              gap: widget.gap,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _PlacementPunchPainter extends CustomPainter {
+  _PlacementPunchPainter({
+    required this.t,
+    required this.cells,
+    required this.cell,
+    required this.gap,
+  });
+
+  final double t;
+  final List<(int, int)> cells;
+  final double cell;
+  final double gap;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stride = cell + gap;
+    final punch = 1.0 + 0.16 * math.sin(t * math.pi);
+    final flash = (1.0 - t).clamp(0.0, 1.0);
+    for (final (r, c) in cells) {
+      if (r < 0 || c < 0 || r >= 9 || c >= 9) continue;
+      final cx = c * stride + cell / 2;
+      final cy = r * stride + cell / 2;
+      final side = cell * punch;
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(cx, cy), width: side, height: side),
+        Radius.circular(side * 0.22),
+      );
+      canvas.drawRRect(
+        rect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = cell * 0.08
+          ..color = Colors.white.withValues(alpha: 0.7 * flash),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PlacementPunchPainter old) =>
+      old.t != t || old.cells != cells || old.cell != cell;
 }
 
 /// Lightweight drag overlay — CustomPaint + one fast pulse (no 81-widget rebuilds).
@@ -344,7 +425,7 @@ class _GhostOverlayState extends State<_GhostOverlay>
     super.initState();
     _pulse = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 90),
+      duration: const Duration(milliseconds: 520),
     );
     widget.listenable.addListener(_onGhost);
     _syncPulse(widget.listenable.value);
@@ -375,7 +456,7 @@ class _GhostOverlayState extends State<_GhostOverlay>
       return;
     }
     if (!_pulse.isAnimating) {
-      _pulse.repeat(reverse: true);
+      _pulse.repeat();
     }
   }
 
@@ -388,11 +469,13 @@ class _GhostOverlayState extends State<_GhostOverlay>
           final ghost = widget.listenable.value;
           if (ghost == null) return const SizedBox.shrink();
 
+          // Sine pulse — no ping-pong snap at the turnaround.
+          final sine = 0.5 + 0.5 * math.sin(_pulse.value * math.pi * 2);
           return CustomPaint(
             size: Size(widget.boardW, widget.boardW),
             painter: _GhostPainter(
               ghost: ghost,
-              pulse: ghost.valid ? _pulse.value : 0.0,
+              pulse: ghost.valid ? sine : 0.0,
               cell: widget.cell,
               gap: widget.gap,
               invalidRed: widget.palette.invalidRed,
@@ -509,66 +592,60 @@ class PiecePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final baseColor = palette.blockColor(piece.color);
-    final emoji = BlockVisuals.emojiFor(piece.color);
-    final bombLocal = piece.isBomb ? piece.occupiedCells.first : null;
-
+    final size = BlockPainter.pieceSize(piece, cellSize, gap);
     return Opacity(
       opacity: opacity,
       child: FittedBox(
         fit: BoxFit.scaleDown,
-        child: SizedBox(
-          width: piece.cols * cellSize + (piece.cols - 1) * gap,
-          height: piece.rows * cellSize + (piece.rows - 1) * gap,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(piece.rows, (r) {
-              return Padding(
-                padding: EdgeInsets.only(bottom: r == piece.rows - 1 ? 0 : gap),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(piece.cols, (c) {
-                    final filled = piece.shape[r][c];
-                    final isBombCell = bombLocal != null &&
-                        bombLocal.$1 == r &&
-                        bombLocal.$2 == c;
-                    if (!filled) {
-                      return Padding(
-                        padding: EdgeInsets.only(
-                          right: c == piece.cols - 1 ? 0 : gap,
-                        ),
-                        child: SizedBox(width: cellSize, height: cellSize),
-                      );
-                    }
-                    return Padding(
-                      padding: EdgeInsets.only(
-                        right: c == piece.cols - 1 ? 0 : gap,
-                      ),
-                      child: isBombCell
-                          ? SizedBox(
-                              width: cellSize,
-                              height: cellSize,
-                              child: BlockVisuals.glassBlock(
-                                size: cellSize,
-                                base: const Color(0xFFB71C1C),
-                                emoji: BlockVisuals.bombEmoji,
-                                elevated: elevated,
-                              ),
-                            )
-                          : BlockVisuals.glassBlock(
-                              size: cellSize,
-                              base: baseColor,
-                              emoji: emoji,
-                              elevated: elevated,
-                            ),
-                    );
-                  }),
-                ),
-              );
-            }),
+        child: CustomPaint(
+          size: size,
+          isComplex: true,
+          painter: _PiecePreviewPainter(
+            piece: piece,
+            palette: palette,
+            cell: cellSize,
+            gap: gap,
+            elevated: elevated,
           ),
         ),
       ),
     );
+  }
+}
+
+class _PiecePreviewPainter extends CustomPainter {
+  _PiecePreviewPainter({
+    required this.piece,
+    required this.palette,
+    required this.cell,
+    required this.gap,
+    required this.elevated,
+  });
+
+  final Piece piece;
+  final ColorPalette palette;
+  final double cell;
+  final double gap;
+  final bool elevated;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    BlockPainter.paintPiece(
+      canvas,
+      piece: piece,
+      palette: palette,
+      cell: cell,
+      gap: gap,
+      elevated: elevated,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _PiecePreviewPainter old) {
+    return old.piece != piece ||
+        old.palette != palette ||
+        old.cell != cell ||
+        old.gap != gap ||
+        old.elevated != elevated;
   }
 }

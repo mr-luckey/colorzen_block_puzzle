@@ -23,11 +23,14 @@ class RankingEngine {
     required int consecutiveClearMoves,
     required bool hadColorBonus,
     required int scoreGained,
+    bool allClear = false,
   }) {
+    if (allClear) return MovePraise.allClear;
     if (linesCleared <= 0 && scoreGained <= 0) return MovePraise.none;
-    if (consecutiveClearMoves >= 5 || linesCleared >= 4) {
+    if (linesCleared >= 6 || consecutiveClearMoves >= 5) {
       return MovePraise.legendary;
     }
+    if (linesCleared >= 4) return MovePraise.legendary;
     if (consecutiveClearMoves >= 3 || linesCleared >= 3 || hadColorBonus) {
       return MovePraise.awesome;
     }
@@ -42,7 +45,29 @@ class RankingEngine {
         MovePraise.great => 'GREAT!',
         MovePraise.awesome => 'AWESOME!',
         MovePraise.legendary => 'LEGENDARY!',
+        MovePraise.allClear => 'ALL CLEAR!',
       };
+
+  /// Block Blast-style line-count shout for 4 / 6 / 9 bursts.
+  static String lineCountLabel(int lines) {
+    if (lines >= 9) return '9 LINES!';
+    if (lines >= 6) return '$lines LINES!';
+    if (lines >= 4) return '$lines LINES!';
+    return '';
+  }
+
+  static String bigClearTitle(int lines, {required bool allClear}) {
+    if (allClear) return 'ALL CLEAR!';
+    return switch (lines) {
+      4 => 'FANTASTIC!',
+      5 => 'INCREDIBLE!',
+      6 => 'UNBELIEVABLE!',
+      7 => 'OUTSTANDING!',
+      8 => 'SENSATIONAL!',
+      _ when lines >= 9 => 'PERFECT!',
+      _ => '',
+    };
+  }
 
   static RankTier tierFor({
     required int movesMade,

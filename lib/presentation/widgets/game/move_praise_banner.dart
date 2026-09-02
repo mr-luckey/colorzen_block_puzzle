@@ -26,6 +26,7 @@ class MovePraiseBanner extends StatelessWidget {
       MovePraise.great => const Color(0xFF5B8CFF),
       MovePraise.awesome => palette.accentSecondary,
       MovePraise.legendary => palette.comboGold,
+      MovePraise.allClear => const Color(0xFFFFEA00),
       MovePraise.none => palette.textPrimary,
     };
 
@@ -66,11 +67,15 @@ class MovePraiseBanner extends StatelessWidget {
                 .then(delay: 420.ms)
                 .fadeOut(duration: 280.ms)
                 .moveY(begin: 0, end: -28, duration: 280.ms),
-            if (praise == MovePraise.legendary || praise == MovePraise.awesome)
+            if (praise == MovePraise.legendary ||
+                praise == MovePraise.awesome ||
+                praise == MovePraise.allClear)
               Text(
-                praise == MovePraise.legendary
-                    ? 'Unstoppable streak!'
-                    : 'Keep the heat!',
+                praise == MovePraise.allClear
+                    ? 'Board wiped — keep going!'
+                    : praise == MovePraise.legendary
+                        ? 'Unstoppable streak!'
+                        : 'Keep the heat!',
                 style: AppTextStyles.body(palette.textPrimary).copyWith(
                   color: palette.textPrimary.withValues(alpha: 0.9),
                 ),

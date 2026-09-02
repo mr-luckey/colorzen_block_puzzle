@@ -72,8 +72,24 @@ void main() {
           consecutiveClearMovesAfter: 1,
           scoringEnabled: true,
         ),
-        500,
+        600,
       );
+    });
+
+    test('4 lines pays a fat Block-Blast burst', () {
+      expect(
+        ScoreCalculator.calculate(
+          linesCleared: 4,
+          colorBonusFlags: [false, false, false, false],
+          consecutiveClearMovesAfter: 1,
+          scoringEnabled: true,
+        ),
+        1200,
+      );
+    });
+
+    test('9 lines is a perfect board-wide pop', () {
+      expect(ScoreCalculator.baseForLines(9), 8000);
     });
 
     test('zen disables scoring', () {

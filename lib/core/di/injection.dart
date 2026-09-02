@@ -11,7 +11,6 @@ import 'package:colorzen_block_puzzle/services/haptic_service.dart';
 import 'package:colorzen_block_puzzle/services/iap_service.dart';
 import 'package:colorzen_block_puzzle/services/review_service.dart';
 import 'package:colorzen_block_puzzle/services/share_service.dart';
-import 'package:colorzen_block_puzzle/services/update_service.dart';
 
 final sl = GetIt.instance;
 
@@ -63,6 +62,5 @@ Future<void> configureDependencies() async {
   sl.registerSingleton<IapService>(iap);
 
   sl.registerLazySingleton<ShareService>(() => SharePlusService());
-  sl.registerLazySingleton<UpdateService>(() => PlayUpdateService());
   sl.registerLazySingleton<ReviewService>(() => InAppReviewService());
 }

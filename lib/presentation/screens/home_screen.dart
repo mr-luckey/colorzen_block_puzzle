@@ -19,12 +19,10 @@ import 'package:colorzen_block_puzzle/presentation/screens/settings_screen.dart'
 import 'package:colorzen_block_puzzle/presentation/widgets/ads/banner_ad_bar.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/app_button.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/review_prompt_dialog.dart';
-import 'package:colorzen_block_puzzle/presentation/widgets/update_available_dialog.dart';
 import 'package:colorzen_block_puzzle/services/ad_service.dart';
 import 'package:colorzen_block_puzzle/services/audio_service.dart';
 import 'package:colorzen_block_puzzle/services/haptic_service.dart';
 import 'package:colorzen_block_puzzle/services/review_service.dart';
-import 'package:colorzen_block_puzzle/services/update_service.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -75,33 +73,6 @@ class _HomeViewState extends State<_HomeView> {
   /// App start: Play update check first, then maybe a random review ask.
   Future<void> _onHomeReady() async {
     await sl<ReviewService>().recordAppOpen();
-    if (!mounted) return;
-    await _checkForAppUpdate();
-    if (!mounted) return;
-    // Random review while browsing home (after a short settle delay).
-    await Future<void>.delayed(const Duration(seconds: 8));
-    if (!mounted) return;
-    await _maybeShowReviewPrompt();
-  }
-
-  Future<void> _checkForAppUpdate() async {
-    if (_promptFlowRunning) return;
-    final available = await sl<UpdateService>().isUpdateAvailable();
-    if (!mounted || !available) return;
-    _promptFlowRunning = true;
-    try {
-      final palette =
-          AppPalettes.of(context.read<ThemeCubit>().state.selected);
-      final update = await showUpdateAvailableDialog(
-        context: context,
-        palette: palette,
-      );
-      if (update && mounted) {
-        await sl<UpdateService>().startUpdate();
-      }
-    } finally {
-      _promptFlowRunning = false;
-    }
   }
 
   Future<void> _maybeShowReviewPrompt() async {
@@ -141,25 +112,26 @@ class _HomeViewState extends State<_HomeView> {
   }
 
   void _openGame(GameMode mode, {bool forceNew = false}) {
-    Navigator.of(context)
-        .push(
-      PageRouteBuilder<void>(
-        transitionDuration: 320.ms,
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            GameScreen(mode: mode, forceNew: forceNew),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
-            FadeTransition(opacity: animation, child: child),
-      ),
-    )
-        .then((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      context.read<HomeCubit>().refresh();
-      // Game / interstitial can leave BGM paused — kick it on home again.
-      // ignore: discarded_futures
-      sl<AudioService>().ensureMusicPlaying();
-      // Random review ask after a play session (while still using the app).
-      // ignore: discarded_futures
-      _maybeShowReviewPrompt();
+      Navigator.of(context)
+          .push(
+        PageRouteBuilder<void>(
+          transitionDuration: 280.ms,
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              GameScreen(mode: mode, forceNew: forceNew),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+              FadeTransition(opacity: animation, child: child),
+        ),
+      )
+          .then((_) {
+        if (!mounted) return;
+        context.read<HomeCubit>().refresh();
+        // ignore: discarded_futures
+        sl<AudioService>().ensureMusicPlaying();
+        // ignore: discarded_futures
+        _maybeShowReviewPrompt();
+      });
     });
   }
 
@@ -596,9 +568,9 @@ class _ModeHeroCard extends StatelessWidget {
   final VoidCallback onTap;
 
   static String assetFor(GameMode mode) => switch (mode) {
-        GameMode.classic => 'assets/images/mode_classic_3d.png',
-        GameMode.daily => 'assets/images/mode_daily_3d.png',
-        GameMode.zen => 'assets/images/mode_zen_3d.png',
+        GameMode.classic => 'assets/images/mode_classic_3d.webp',
+        GameMode.daily => 'assets/images/mode_daily_3d.webp',
+        GameMode.zen => 'assets/images/mode_zen_3d.webp',
       };
 
   _ModeVisual get _visual {

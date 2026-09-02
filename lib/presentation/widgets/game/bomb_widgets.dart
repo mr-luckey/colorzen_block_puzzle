@@ -5,11 +5,9 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import 'package:colorzen_block_puzzle/core/constants/app_constants.dart';
-import 'package:colorzen_block_puzzle/core/di/injection.dart';
 import 'package:colorzen_block_puzzle/core/theme/app_theme.dart';
 import 'package:colorzen_block_puzzle/domain/models/models.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/block_visuals.dart';
-import 'package:colorzen_block_puzzle/services/audio_service.dart';
 
 /// Board bomb cell — self-ticking countdown (no parent setState).
 class BombCell extends StatefulWidget {
@@ -29,13 +27,18 @@ class BombCell extends StatefulWidget {
 }
 
 class _BombCellState extends State<BombCell>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final Ticker _ticker;
+  late final AnimationController _pump;
   final ValueNotifier<int> _secs = ValueNotifier(0);
 
   @override
   void initState() {
     super.initState();
+    _pump = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..repeat(reverse: true);
     _tick();
     _ticker = createTicker((_) => _tick())..start();
   }
@@ -52,19 +55,21 @@ class _BombCellState extends State<BombCell>
     final next = (widget.bomb.remainingMs() / 1000)
         .ceil()
         .clamp(0, AppConstants.bombDurationSec);
-    if (_secs.value != next) {
-      final prev = _secs.value;
-      _secs.value = next;
-      // Tick-tick each second while armed (skip first sync).
-      if (prev > 0 && next < prev && next >= 0) {
-        sl<AudioService>().playSfx(SfxType.tick);
-      }
+    if (_secs.value == next) return;
+    _secs.value = next;
+    final urgent = next <= 5;
+    final nextDuration = Duration(milliseconds: urgent ? 360 : 700);
+    if (_pump.duration != nextDuration) {
+      _pump
+        ..duration = nextDuration
+        ..repeat(reverse: true);
     }
   }
 
   @override
   void dispose() {
     _ticker.dispose();
+    _pump.dispose();
     _secs.dispose();
     super.dispose();
   }
@@ -88,7 +93,17 @@ class _BombCellState extends State<BombCell>
             ? const Color(0xFF4527A0)
             : const Color(0xFFB71C1C);
 
-        return SizedBox(
+        return AnimatedBuilder(
+          animation: _pump,
+          builder: (context, child) {
+            final beat = Curves.easeInOut.transform(_pump.value);
+            final scale = urgent ? 1.0 + 0.22 * beat : 1.0 + 0.12 * beat;
+            return Transform.scale(
+              scale: scale,
+              child: child,
+            );
+          },
+          child: SizedBox(
           width: s,
           height: s,
           child: Stack(
@@ -141,6 +156,7 @@ class _BombCellState extends State<BombCell>
               ),
             ],
           ),
+        ),
         );
       },
     );
@@ -234,10 +250,10 @@ class BoardNukeOverlay extends StatelessWidget {
                   .scale(
                     begin: const Offset(0.2, 0.2),
                     end: Offset(6.5 + ring * 1.2, 6.5 + ring * 1.2),
-                    duration: 480.ms,
+                    duration: 720.ms,
                     curve: Curves.easeOutCubic,
                   )
-                  .fadeOut(delay: 60.ms, duration: 320.ms),
+                  .fadeOut(delay: 80.ms, duration: 420.ms),
             );
           }),
           ...List.generate(32, (i) {

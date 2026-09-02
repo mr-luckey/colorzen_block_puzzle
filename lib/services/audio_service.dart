@@ -40,32 +40,19 @@ class AudioPlayersService implements AudioService {
 
   final AppSettings Function() settingsProvider;
 
-  final List<AudioPlayer> _sfxPool = [];
   final AudioPlayer _music = AudioPlayer();
-  int _sfxIndex = 0;
+  AudioPlayer? _tick;
   bool _ready = false;
   bool _starting = false;
   bool _wantMusic = false;
   bool _appInForeground = true;
   bool _intentionallyPaused = false;
 
-  static const _bgm = 'audio/bgm_colorzen.wav';
+  static const _bgm = 'audio/bgm_colorzen.ogg';
+  static const _tickAsset = 'audio/tick.wav';
 
   /// Keep BGM softer than the slider so it stays chill behind SFX.
   static const _musicSoftFactor = 0.55;
-
-  static const _files = {
-    SfxType.tap: 'audio/tap.wav',
-    SfxType.pickup: 'audio/pickup.wav',
-    SfxType.place: 'audio/place.wav',
-    SfxType.clear: 'audio/clear.wav',
-    SfxType.lineClear: 'audio/line_clear.wav',
-    SfxType.blast: 'audio/blast.wav',
-    SfxType.combo: 'audio/combo.wav',
-    SfxType.invalid: 'audio/invalid.wav',
-    SfxType.gameOver: 'audio/clear.wav',
-    SfxType.tick: 'audio/tick.wav',
-  };
 
   /// Mix BGM + SFX; never steal exclusive focus (that kills the loop on Android).
   static final AudioContext _mixCtx = AudioContextConfig(
@@ -87,13 +74,6 @@ class AudioPlayersService implements AudioService {
   Future<void> init() async {
     try {
       await AudioPlayer.global.setAudioContext(_mixCtx);
-
-      for (var i = 0; i < 5; i++) {
-        final p = AudioPlayer();
-        await p.setAudioContext(_mixCtx);
-        await p.setPlayerMode(PlayerMode.lowLatency);
-        _sfxPool.add(p);
-      }
 
       await _music.setAudioContext(_mixCtx);
       await _music.setPlayerMode(PlayerMode.mediaPlayer);
@@ -123,6 +103,21 @@ class AudioPlayersService implements AudioService {
       });
 
       _ready = true;
+
+      try {
+        final tick = AudioPlayer();
+        await tick.setAudioContext(_mixCtx);
+        try {
+          await tick.setPlayerMode(PlayerMode.lowLatency);
+        } catch (_) {
+          await tick.setPlayerMode(PlayerMode.mediaPlayer);
+        }
+        await tick.setReleaseMode(ReleaseMode.stop);
+        await tick.setVolume(0.94);
+        _tick = tick;
+      } catch (_) {
+        _tick = null;
+      }
     } catch (_) {
       _ready = false;
     }
@@ -130,35 +125,15 @@ class AudioPlayersService implements AudioService {
 
   @override
   Future<void> playSfx(SfxType type) async {
-    if (!_ready ||
-        !_appInForeground ||
-        !settingsProvider().sfxEnabled ||
-        _sfxPool.isEmpty) {
-      return;
-    }
-    final file = _files[type];
-    if (file == null) return;
+    // One reused player — extra MediaPlayers ANR this OEM.
+    if (type != SfxType.tick) return;
+    if (!_ready || !_appInForeground) return;
+    if (!settingsProvider().sfxEnabled) return;
+    final player = _tick;
+    if (player == null) return;
     try {
-      final player = _sfxPool[_sfxIndex % _sfxPool.length];
-      _sfxIndex++;
       await player.stop();
-      await player.play(
-        AssetSource(file),
-        volume: switch (type) {
-          SfxType.tick => 0.55,
-          SfxType.lineClear => 1.0,
-          SfxType.blast => 1.0,
-          SfxType.combo => 0.95,
-          _ => 0.9,
-        },
-      );
-      // Soft nudge if BGM dropped — don't await so SFX stays snappy.
-      if (_wantMusic &&
-          settingsProvider().musicEnabled &&
-          _music.state != PlayerState.playing) {
-        // ignore: discarded_futures
-        ensureMusicPlaying();
-      }
+      await player.play(AssetSource(_tickAsset), volume: 0.94);
     } catch (_) {}
   }
 
@@ -233,11 +208,6 @@ class AudioPlayersService implements AudioService {
   @override
   Future<void> onAppPaused() async {
     _appInForeground = false;
-    try {
-      for (final p in _sfxPool) {
-        await p.stop();
-      }
-    } catch (_) {}
     await pauseMusic();
   }
 
@@ -296,7 +266,6 @@ class _MusicBootstrapState extends State<MusicBootstrap>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _kick();
     });
-    // Second kick after splash-ish delay (Android often needs a later start).
     Future<void>.delayed(const Duration(milliseconds: 900), _kick);
     Future<void>.delayed(const Duration(milliseconds: 2000), _kick);
   }
