@@ -31,7 +31,7 @@ class _ClearBurstState extends State<ClearBurst>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 420),
+      duration: const Duration(milliseconds: 720),
     )..forward();
   }
 
@@ -93,7 +93,7 @@ class _BurstPainter extends CustomPainter {
         .clamp(0.0, 1.0);
 
     // Core bloom.
-    final bloomR = (mode == _BurstMode.clear ? 18.0 : 14.0) * (0.4 + t * 3.8);
+    final bloomR = (mode == _BurstMode.clear ? 18.0 : 22.0) * (0.4 + t * 4.4);
     canvas.drawCircle(
       origin,
       bloomR,
@@ -107,12 +107,29 @@ class _BurstPainter extends CustomPainter {
                   Colors.transparent,
                 ]
               : [
-                  Colors.white.withValues(alpha: fade),
-                  const Color(0xFFFF6D00).withValues(alpha: 0.65 * fade),
+                  Colors.white.withValues(alpha: 0.95 * fade),
+                  const Color(0xFFFFEA00).withValues(alpha: 0.85 * fade),
+                  const Color(0xFFFF6D00).withValues(alpha: 0.7 * fade),
+                  const Color(0xFFFF1744).withValues(alpha: 0.35 * fade),
                   Colors.transparent,
                 ],
         ).createShader(Rect.fromCircle(center: origin, radius: bloomR)),
     );
+
+    if (mode == _BurstMode.blast) {
+      for (var ring = 0; ring < 3; ring++) {
+        final rt = (t - ring * 0.08).clamp(0.0, 1.0);
+        canvas.drawCircle(
+          origin,
+          20 + rt * (90.0 + ring * 38),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 4.5 - ring
+            ..color = const Color(0xFFFF6D00)
+                .withValues(alpha: 0.55 * fade * (1 - rt)),
+        );
+      }
+    }
 
     final palette = mode == _BurstMode.blast
         ? [
@@ -126,12 +143,14 @@ class _BurstPainter extends CustomPainter {
 
     for (var i = 0; i < count; i++) {
       final angle = (i / count) * math.pi * 2 + rng.nextDouble() * 0.25;
-      final dist = (mode == _BurstMode.clear ? 52.0 : 40.0) +
-          rng.nextDouble() * (mode == _BurstMode.clear ? 90 : 72);
-      final side = (mode == _BurstMode.clear ? 4.0 : 5.0) + rng.nextDouble() * 7;
+      final dist = (mode == _BurstMode.clear ? 52.0 : 62.0) +
+          rng.nextDouble() * (mode == _BurstMode.clear ? 90 : 110);
+      final side = (mode == _BurstMode.clear ? 4.0 : 6.0) + rng.nextDouble() * 8;
       final color = palette[i % palette.length];
+      final lift = mode == _BurstMode.blast ? 28 * t : 0.0;
       final px = origin.dx + math.cos(angle) * dist * t;
-      final py = origin.dy + math.sin(angle) * dist * t - (mode == _BurstMode.clear ? 14 * t : 0);
+      final py = origin.dy + math.sin(angle) * dist * t - lift -
+          (mode == _BurstMode.clear ? 14 * t : 0);
       final rot = (rng.nextDouble() - 0.5) * 1.2 * t;
       final a = fade;
 
@@ -208,9 +227,9 @@ class _ClearFxOverlayState extends State<ClearFxOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
-  /// Line clear shatter — hold a beat longer so the pop reads clearly.
-  static const _lineMs = 720;
-  static const _blastMs = 820;
+  /// Line clear shatter — held longer so the pop + score fly can read.
+  static const _lineMs = 1400;
+  static const _blastMs = 1550;
 
   @override
   void initState() {
@@ -660,7 +679,7 @@ class _BlastBurstState extends State<BlastBurst>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 680),
+      duration: const Duration(milliseconds: 1250),
     )..forward();
   }
 
@@ -682,7 +701,7 @@ class _BlastBurstState extends State<BlastBurst>
               rawT: _ctrl.value,
               colors: widget.colors,
               seed: widget.seed,
-              count: PerfTier.instance.isLowEnd ? 10 : 16,
+              count: PerfTier.instance.isLowEnd ? 18 : 28,
               mode: _BurstMode.blast,
             ),
             child: const SizedBox.expand(),

@@ -24,8 +24,8 @@ import 'package:colorzen_block_puzzle/presentation/bloc/theme/theme_cubit.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/ads/banner_ad_bar.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/app_button.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/bomb_widgets.dart';
-import 'package:colorzen_block_puzzle/presentation/widgets/game/clear_celebration.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/clear_burst.dart';
+import 'package:colorzen_block_puzzle/presentation/widgets/game/clear_score_fly.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/drag_controller.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/game_exit_sheet.dart';
 import 'package:colorzen_block_puzzle/presentation/widgets/game/game_grid.dart';
@@ -73,6 +73,7 @@ class _GameView extends StatefulWidget {
 class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
   final _gridKey = GlobalKey();
   final _shareKey = GlobalKey();
+  final _scoreHudKey = GlobalKey();
   final _drag = PieceDragController();
 
   final _fx = ValueNotifier<_GameFx>(const _GameFx());
@@ -80,6 +81,7 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
   bool _paused = false;
   bool _pauseOpen = false;
   bool _leftToBackground = false;
+  int? _hudHeldScore;
   Timer? _bombUiTimer;
   TimeBomb? _trackedBomb;
 
@@ -256,6 +258,24 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
             }
             return prev.runtimeType != next.runtimeType || prev != next;
           },
+          listenWhen: (prev, next) {
+            if (prev is GamePlaying && next is GamePlaying) {
+              // Survive clock keeps lastScoreGained — do not re-fire clear FX.
+              if (prev.session.movesMade == next.session.movesMade &&
+                  prev.lastScoreGained == next.lastScoreGained &&
+                  prev.praise == next.praise &&
+                  prev.bombSpawned == next.bombSpawned &&
+                  prev.allClear == next.allClear &&
+                  prev.boardNuked == next.boardNuked &&
+                  prev.linesJustCleared == next.linesJustCleared &&
+                  prev.bombDefused == next.bombDefused &&
+                  prev.session.timeBomb == next.session.timeBomb &&
+                  listEquals(prev.blastCells, next.blastCells)) {
+                return false;
+              }
+            }
+            return true;
+          },
           listener: (context, state) async {
             if (state is GamePlaying) {
               _syncBombTimer(state.session);
@@ -284,24 +304,25 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
                 final big = state.allClear ||
                     state.boardNuked ||
                     state.linesJustCleared >= 4;
-                final fireBlast = state.boardNuked ||
+                final bigFire = state.linesJustCleared > 1 ||
                     state.blastCells.isNotEmpty ||
-                    state.linesJustCleared >= 2;
+                    state.bombDefused ||
+                    state.boardNuked;
                 var next = f.copyWith(
-                  showCombo: state.showCombo && !big,
-                  showBurst: cleared &&
-                      !fireBlast &&
-                      !state.allClear &&
-                      state.linesJustCleared < 4,
-                  showBlast: fireBlast && !state.boardNuked,
-                  showBoardNuke: state.boardNuked,
-                  nukeBonus: state.boardNuked ? state.lastScoreGained : 0,
-                  showClearCele: big,
+                  showCombo: false,
+                  showBurst: false,
+                  showBlast: bigFire,
+                  showBoardNuke: false,
+                  showClearCele: false,
                   celeLines: state.linesJustCleared,
                   celeAllClear: state.allClear || state.boardNuked,
                   celeBonus: state.lastScoreGained,
                 );
-                if (state.lastScoreGained > 0 && !big) {
+                if (state.lastScoreGained > 0 &&
+                    state.session.mode != GameMode.zen &&
+                    f.floatingScore == null) {
+                  _hudHeldScore =
+                      state.session.score - state.lastScoreGained;
                   next = next.copyWith(floatingScore: state.lastScoreGained);
                 }
                 if (cleared) {
@@ -315,18 +336,11 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
                 }
                 return next;
               });
-              final hold = state.boardNuked
-                  ? 1400
-                  : (state.allClear || state.linesJustCleared >= 4)
-                      ? 1200
-                      : state.linesJustCleared >= 2
-                          ? 1000
-                          : 800;
+              final hold = 3000;
               Future<void>.delayed(Duration(milliseconds: hold), () {
                 if (mounted) {
                   _pushFx(
                     (f) => f.copyWith(
-                      clearFloating: true,
                       showCombo: false,
                       showBurst: false,
                       showBlast: false,
@@ -386,45 +400,38 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
                         valueListenable: _fx,
                         builder: (context, fx, _) {
                           return Stack(
+                            fit: StackFit.expand,
                             children: [
-                              if (fx.floatingScore != null)
+                              if (fx.showBlast)
                                 Align(
-                                  alignment: const Alignment(0, -0.25),
-                                  child:
-                                      Text(
-                                            '+${fx.floatingScore}',
-                                            style:
-                                                AppTextStyles.score(
-                                                  palette.comboGold,
-                                                ).copyWith(
-                                                  fontSize: 42,
-                                                  shadows: [
-                                                    Shadow(
-                                                      color: palette.comboGold
-                                                          .withValues(
-                                                            alpha: 0.6,
-                                                          ),
-                                                      blurRadius: 16,
-                                                    ),
-                                                  ],
-                                                ),
-                                          )
-                                          .animate()
-                                          .scale(
-                                            begin: const Offset(0.6, 0.6),
-                                            end: const Offset(1.1, 1.1),
-                                            duration: 280.ms,
-                                            curve: Curves.easeOutBack,
-                                          )
-                                          .moveY(
-                                            begin: 0,
-                                            end: -56,
-                                            duration: 700.ms,
-                                          )
-                                          .fadeOut(
-                                            delay: 280.ms,
-                                            duration: 420.ms,
-                                          ),
+                                  alignment: const Alignment(0, 0.08),
+                                  child: SizedBox(
+                                    width: 420,
+                                    height: 420,
+                                    child: BlastBurst(
+                                      key: ValueKey('fire_${fx.burstSeed}'),
+                                      seed: fx.burstSeed,
+                                      colors: [
+                                        const Color(0xFFFF6D00),
+                                        const Color(0xFFFF1744),
+                                        const Color(0xFFFFEA00),
+                                        palette.comboGold,
+                                        palette.accentPrimary,
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              if (fx.floatingScore != null)
+                                Positioned.fill(
+                                  child: ClearScoreFly(
+                                    key: const ValueKey('score_fly'),
+                                    amount: fx.floatingScore!,
+                                    lines: fx.celeLines,
+                                    allClear: fx.celeAllClear,
+                                    palette: palette,
+                                    targetKey: _scoreHudKey,
+                                    onArrived: () => _onScoreFlyArrived(),
+                                  ),
                                 ),
                               if (fx.showBurst && PerfTier.instance.screenBurst)
                                 Align(
@@ -441,40 +448,6 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
                                         palette.accentSecondary,
                                         ...palette.blocks.take(3),
                                       ],
-                                    ),
-                                  ),
-                                ),
-                              if (fx.showBlast && PerfTier.instance.screenBurst)
-                                Align(
-                                  alignment: const Alignment(0, -0.05),
-                                  child: SizedBox(
-                                    width: 360,
-                                    height: 360,
-                                    child: BlastBurst(
-                                      seed: fx.burstSeed,
-                                      colors: [
-                                        const Color(0xFFFF6D00),
-                                        const Color(0xFFFF1744),
-                                        palette.comboGold,
-                                        palette.accentPrimary,
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              if (fx.showClearCele)
-                                Align(
-                                  alignment: const Alignment(0, -0.08),
-                                  child: SizedBox(
-                                    width: 320,
-                                    height: 320,
-                                    child: ClearCelebration(
-                                      key: ValueKey(
-                                        'cele_${fx.burstSeed}_${fx.celeLines}',
-                                      ),
-                                      lines: fx.celeLines,
-                                      allClear: fx.celeAllClear,
-                                      bonus: fx.celeBonus,
-                                      palette: palette,
                                     ),
                                   ),
                                 ),
@@ -646,7 +619,7 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 6),
               ScoreDisplay(
-                score: session.score,
+                score: _hudHeldScore ?? session.score,
                 bestScore: session.bestScore,
                 palette: palette,
                 isNewBest:
@@ -656,6 +629,7 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
                 hideScore: session.mode == GameMode.zen,
                 movesMade: session.movesMade,
                 mode: session.mode,
+                scoreSlotKey: _scoreHudKey,
               ),
               const SizedBox(height: 2),
               Expanded(
@@ -716,6 +690,13 @@ class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
         );
       },
     );
+  }
+
+  void _onScoreFlyArrived() {
+    if (!mounted) return;
+    _pushFx((f) => f.copyWith(clearFloating: true));
+    if (_hudHeldScore == null) return;
+    setState(() => _hudHeldScore = null);
   }
 
   void _freezePlay(bool freeze) {

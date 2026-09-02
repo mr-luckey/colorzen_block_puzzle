@@ -219,6 +219,7 @@ class BoardNukeOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    assert(bonus >= 0);
     return IgnorePointer(
       child: Stack(
         fit: StackFit.expand,
@@ -334,20 +335,6 @@ class BoardNukeOverlay extends StatelessWidget {
                     )
                     .then(delay: 280.ms)
                     .fadeOut(duration: 160.ms),
-                if (bonus > 0)
-                  Text(
-                    '+$bonus',
-                    style: AppTextStyles.score(Colors.white).copyWith(
-                      fontSize: 28,
-                      shadows: const [
-                        Shadow(color: Colors.black54, blurRadius: 8),
-                      ],
-                    ),
-                  )
-                      .animate()
-                      .fadeIn(delay: 40.ms)
-                      .moveY(begin: 12, end: -20, duration: 380.ms)
-                      .fadeOut(delay: 160.ms, duration: 180.ms),
               ],
             ),
           ),

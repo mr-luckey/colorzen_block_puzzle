@@ -493,7 +493,6 @@ class _ConveyorPieceState extends State<_ConveyorPiece> {
         _boardRetry = 0;
         widget.onDragStart();
         sl<HapticService>().selection();
-        sl<AudioService>().playSfx(SfxType.pickup);
         drag.start(
           p: piece,
           index: 0,
@@ -543,6 +542,7 @@ class ScoreDisplay extends StatelessWidget {
     this.hideScore = false,
     this.movesMade = 0,
     this.mode = GameMode.classic,
+    this.scoreSlotKey,
   });
 
   final int score;
@@ -552,6 +552,7 @@ class ScoreDisplay extends StatelessWidget {
   final bool hideScore;
   final int movesMade;
   final GameMode mode;
+  final GlobalKey? scoreSlotKey;
 
   @override
   Widget build(BuildContext context) {
@@ -601,11 +602,14 @@ class ScoreDisplay extends StatelessWidget {
             color: palette.accentSecondary.withValues(alpha: 0.25),
           ),
           Expanded(
-            child: _HudStat(
-              label: mode == GameMode.daily ? 'DAILY ×1.5' : 'SCORE',
-              value: score,
-              palette: palette,
-              highlight: true,
+            child: KeyedSubtree(
+              key: scoreSlotKey,
+              child: _HudStat(
+                label: mode == GameMode.daily ? 'DAILY ×1.5' : 'SCORE',
+                value: score,
+                palette: palette,
+                highlight: true,
+              ),
             ),
           ),
           Container(

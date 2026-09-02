@@ -14,6 +14,8 @@ enum SfxType {
   invalid,
   gameOver,
   tick,
+  allClear,
+  timeUp,
 }
 
 abstract class AudioService {
@@ -42,6 +44,8 @@ class AudioPlayersService implements AudioService {
 
   final AudioPlayer _music = AudioPlayer();
   AudioPlayer? _tick;
+  final Map<String, AudioPlayer> _sfxByAsset = {};
+  final Set<String> _sfxBusy = {};
   bool _ready = false;
   bool _starting = false;
   bool _wantMusic = false;
@@ -50,6 +54,39 @@ class AudioPlayersService implements AudioService {
 
   static const _bgm = 'audio/bgm_colorzen.ogg';
   static const _tickAsset = 'audio/tick.wav';
+
+  String _assetFor(SfxType type) => switch (type) {
+        SfxType.tick => _tickAsset,
+        // Old invalid-return punch now on line clears.
+        SfxType.lineClear => 'audio/blast.wav',
+        SfxType.blast => 'audio/blast.wav',
+        SfxType.timeUp => 'audio/time_up.wav',
+        SfxType.gameOver => 'audio/blast.wav',
+        SfxType.allClear => 'audio/all_clear.wav',
+        // Previous line-clear clip now on rejected return.
+        SfxType.invalid => 'audio/line_clear.wav',
+        SfxType.clear ||
+        SfxType.combo ||
+        SfxType.tap ||
+        SfxType.pickup ||
+        SfxType.place =>
+          'audio/clear.wav',
+      };
+
+  double _volFor(SfxType type) => switch (type) {
+        SfxType.tick => 0.94,
+        SfxType.blast => 1.0,
+        SfxType.lineClear => 0.95,
+        SfxType.invalid => 0.72,
+        SfxType.allClear => 1.0,
+        SfxType.timeUp => 1.0,
+        SfxType.clear => 0.88,
+        SfxType.combo => 0.9,
+        SfxType.gameOver => 0.95,
+        SfxType.tap => 0.36,
+        SfxType.pickup => 0.42,
+        SfxType.place => 0.5,
+      };
 
   /// Keep BGM softer than the slider so it stays chill behind SFX.
   static const _musicSoftFactor = 0.55;
@@ -123,18 +160,55 @@ class AudioPlayersService implements AudioService {
     }
   }
 
+  Future<AudioPlayer?> _playerForAsset(String asset) async {
+    final existing = _sfxByAsset[asset];
+    if (existing != null) return existing;
+    try {
+      final p = AudioPlayer();
+      await p.setAudioContext(_mixCtx);
+      try {
+        await p.setPlayerMode(PlayerMode.lowLatency);
+      } catch (_) {
+        await p.setPlayerMode(PlayerMode.mediaPlayer);
+      }
+      await p.setReleaseMode(ReleaseMode.stop);
+      _sfxByAsset[asset] = p;
+      return p;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Future<void> playSfx(SfxType type) async {
-    // One reused player — extra MediaPlayers ANR this OEM.
-    if (type != SfxType.tick) return;
     if (!_ready || !_appInForeground) return;
     if (!settingsProvider().sfxEnabled) return;
-    final player = _tick;
-    if (player == null) return;
     try {
-      await player.stop();
-      await player.play(AssetSource(_tickAsset), volume: 0.94);
-    } catch (_) {}
+      if (type == SfxType.tick) {
+        final player = _tick;
+        if (player == null) return;
+        await player.stop();
+        await player.play(AssetSource(_tickAsset), volume: 0.94);
+        return;
+      }
+      final asset = _assetFor(type);
+      // Same file always uses the same player — never swap clips on one
+      // MediaPlayer (that made SFX morph after a few minutes).
+      if (_sfxBusy.contains(asset)) return;
+      _sfxBusy.add(asset);
+      try {
+        final player = await _playerForAsset(asset);
+        if (player == null) return;
+        if (player.state == PlayerState.playing) {
+          await player.stop();
+        }
+        await player.play(AssetSource(asset), volume: _volFor(type));
+      } finally {
+        _sfxBusy.remove(asset);
+      }
+    } catch (_) {
+      _sfxBusy.remove(_assetFor(type));
+    }
   }
 
   @override

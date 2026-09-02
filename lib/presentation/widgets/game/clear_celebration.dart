@@ -37,7 +37,7 @@ class _ClearCelebrationState extends State<ClearCelebration>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: widget.allClear ? 1100 : 900),
+      duration: Duration(milliseconds: widget.allClear ? 1500 : 1280),
     )..forward();
   }
 
@@ -49,6 +49,7 @@ class _ClearCelebrationState extends State<ClearCelebration>
 
   @override
   Widget build(BuildContext context) {
+    assert(widget.bonus >= 0);
     final title = RankingEngine.bigClearTitle(
       widget.lines,
       allClear: widget.allClear,
@@ -126,19 +127,6 @@ class _ClearCelebrationState extends State<ClearCelebration>
                   end: const Offset(1, 1),
                   duration: 120.ms,
                 ),
-            if (widget.bonus > 0)
-              Text(
-                '+${widget.bonus}',
-                style: AppTextStyles.score(Colors.white).copyWith(
-                  fontSize: 30,
-                  shadows: const [
-                    Shadow(color: Colors.black54, blurRadius: 8),
-                  ],
-                ),
-              )
-                  .animate()
-                  .fadeIn(delay: 80.ms, duration: 160.ms)
-                  .moveY(begin: 16, end: -8, duration: 420.ms),
           ],
         ),
       ),

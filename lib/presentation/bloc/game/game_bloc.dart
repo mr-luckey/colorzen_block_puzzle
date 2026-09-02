@@ -750,13 +750,11 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     if (allClear) {
       _haptics.heavy();
       // ignore: discarded_futures
-      _audio.playSfx(SfxType.combo);
+      _audio.playSfx(SfxType.allClear);
     } else if (calloutLines >= 4) {
       _haptics.heavy();
-      if (consecutive < 3) {
-        // ignore: discarded_futures
-        _audio.playSfx(SfxType.combo);
-      }
+      // ignore: discarded_futures
+      _audio.playSfx(SfxType.allClear);
     }
 
     var praise = RankingEngine.praiseFor(
@@ -868,7 +866,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
           ),
         ),
       );
-      await Future<void>.delayed(const Duration(milliseconds: 720));
+      await Future<void>.delayed(const Duration(milliseconds: 1800));
       emit(
         GameOverState(
           newSession,
@@ -917,7 +915,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
 
     // Clear line-flash flags after Block-Blast-length FX.
     final settleMoves = movesMade;
-    await Future<void>.delayed(const Duration(milliseconds: 720));
+    await Future<void>.delayed(const Duration(milliseconds: 1800));
     final after = state;
     if (after is GamePlaying &&
         after.session.movesMade == settleMoves &&
@@ -1220,7 +1218,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       _stopSurviveClock();
       _haptics.heavy();
       // ignore: discarded_futures
-      _audio.playSfx(SfxType.gameOver);
+      _audio.playSfx(SfxType.timeUp);
       emit(
         GameTimeUpState(
           current.session,
