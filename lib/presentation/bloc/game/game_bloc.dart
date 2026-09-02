@@ -611,14 +611,19 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       );
     }
 
-    // Defuse ONLY a bomb that was already armed on the board.
-    // Never blast on the same move the bomb is first placed — that felt
-    // like "put = instant explode" before the player could finish a line.
-    final defuseTarget = bomb;
-    if (defuseTarget != null &&
+    bool bombHitByLine(TimeBomb b) =>
         lines > 0 &&
-        (clearResult.clearedRows.contains(defuseTarget.row) ||
-            clearResult.clearedCols.contains(defuseTarget.col))) {
+        (clearResult.clearedRows.contains(b.row) ||
+            clearResult.clearedCols.contains(b.col));
+
+    // Line through the bomb cell detonates it immediately — including
+    // the same move the bomb piece is placed. Line clear + area impact.
+    final defuseTarget = (bomb != null && bombHitByLine(bomb))
+        ? bomb
+        : (placedBomb != null && bombHitByLine(placedBomb))
+            ? placedBomb
+            : null;
+    if (defuseTarget != null) {
       bombDefused = true;
       bomb = null;
       placedBomb = null;
@@ -655,6 +660,11 @@ class GameBloc extends Bloc<GameEvent, GameState> {
         );
         workingGrid = blast.grid;
         blastCells = blast.cells;
+        final bombCell = (defuseTarget.row, defuseTarget.col);
+        if (!blastCells.contains(bombCell)) {
+          blastCells = [bombCell, ...blastCells];
+        }
+        clearFxColors[bombCell] = defuseTarget.color;
         for (final cell in blast.cells) {
           final color = preBlast[cell.$1][cell.$2];
           if (color != null) clearFxColors[cell] = color;
@@ -696,8 +706,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
         gained += areaBonus;
       }
     } else if (placedBomb != null) {
-      // Arm timer after put. If this place also cleared the bomb cell via a
-      // normal line clear, skip arming (no instant area blast).
+      // Arm immediately on place if the bomb cell is still on the board.
       if (workingGrid[placedBomb.row][placedBomb.col] != null) {
         bomb = placedBomb;
         bombSpawned = true;

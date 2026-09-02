@@ -70,7 +70,7 @@ class _GameView extends StatefulWidget {
   State<_GameView> createState() => _GameViewState();
 }
 
-class _GameViewState extends State<_GameView> {
+class _GameViewState extends State<_GameView> with WidgetsBindingObserver {
   final _gridKey = GlobalKey();
   final _shareKey = GlobalKey();
   final _drag = PieceDragController();
@@ -79,12 +79,20 @@ class _GameViewState extends State<_GameView> {
   bool _gameOverShown = false;
   bool _paused = false;
   bool _pauseOpen = false;
+  bool _leftToBackground = false;
   Timer? _bombUiTimer;
   TimeBomb? _trackedBomb;
+
+  bool get _isLivePlay {
+    if (!mounted) return false;
+    final s = context.read<GameBloc>().state;
+    return s is GamePlaying && !s.session.isGameOver;
+  }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Hard-block menu interstitials while the board is active.
     sl<AdService>().setInGameplay(true);
     PerfTier.instance.ensureHooked();
@@ -92,6 +100,7 @@ class _GameViewState extends State<_GameView> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _bombUiTimer?.cancel();
     _fx.dispose();
     // Allow menu / home interstitial loop again after leaving the board.
@@ -101,6 +110,54 @@ class _GameViewState extends State<_GameView> {
     sl<AudioService>().ensureMusicPlaying();
     super.dispose();
     _drag.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
+    switch (state) {
+      case AppLifecycleState.inactive:
+        // Recents / home press starts here — freeze clock immediately.
+        if (_isLivePlay) _freezePlay(true);
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        if (_isLivePlay || _paused) {
+          _freezePlay(true);
+          _leftToBackground = true;
+          _persistLiveSession();
+        }
+        break;
+      case AppLifecycleState.resumed:
+        _onReturnedToForeground();
+        break;
+    }
+  }
+
+  void _persistLiveSession() {
+    final s = context.read<GameBloc>().state;
+    if (s is GamePlaying && !s.session.isGameOver) {
+      // ignore: discarded_futures
+      sl<GameRepository>().saveSession(s.session);
+    }
+  }
+
+  void _onReturnedToForeground() {
+    if (!_leftToBackground) {
+      // Notification shade / transient inactive — keep playing.
+      if (_paused && !_pauseOpen && _isLivePlay) {
+        _freezePlay(false);
+      }
+      return;
+    }
+    _leftToBackground = false;
+    if (!_isLivePlay || _pauseOpen) return;
+    final palette = AppPalettes.of(context.read<ThemeCubit>().state.selected);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _pauseOpen || !_isLivePlay) return;
+      _confirmExit(context, palette);
+    });
   }
 
   void _syncBombTimer(GameSession session) {
@@ -710,7 +767,18 @@ class _GameViewState extends State<_GameView> {
       }
     } finally {
       _pauseOpen = false;
-      if (mounted && !leave) _freezePlay(false);
+      if (mounted && !leave) {
+        final life = WidgetsBinding.instance.lifecycleState;
+        final inBackground = life == AppLifecycleState.paused ||
+            life == AppLifecycleState.hidden ||
+            life == AppLifecycleState.detached ||
+            _leftToBackground;
+        if (inBackground) {
+          _freezePlay(true);
+        } else if (life == AppLifecycleState.resumed) {
+          _freezePlay(false);
+        }
+      }
     }
   }
 
