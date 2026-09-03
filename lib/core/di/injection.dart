@@ -38,27 +38,40 @@ Future<void> configureDependencies() async {
   final audio = AudioPlayersService(
     settingsProvider: () => sl<SettingsCubit>().state,
   );
-  await audio.init();
+  // Non-blocking: audio init can hang on some Android devices (setAudioContext).
+  // MusicBootstrap will kick playback after first frame anyway.
+  try {
+    await audio.init().timeout(const Duration(seconds: 3));
+  } catch (_) {
+    // Swallow — audio will stay silent rather than blocking splash forever.
+  }
   sl.registerSingleton<AudioService>(audio);
   settingsCubit.bindOnChanged(audio.syncFromSettings);
   MusicBootstrapHooks.ensureMusic = audio.ensureMusicPlaying;
   MusicBootstrapHooks.onPaused = audio.onAppPaused;
   MusicBootstrapHooks.onResumed = audio.onAppResumed;
   // Don't rely on this alone — Android may block until UI/gesture.
-  await audio.syncFromSettings(settingsCubit.state);
+  try {
+    await audio.syncFromSettings(settingsCubit.state).timeout(const Duration(seconds: 2));
+  } catch (_) {}
 
   // Register only — never await AdMob here. Offline / slow GMS was hanging
   // native splash forever. Bootstrap after first UI frame (see HomeScreen).
   sl.registerSingleton<AdService>(AdMobService());
 
   final iap = InAppPurchaseService();
-  await iap.init(
-    onAdsOwnershipChanged: (removed) {
-      if (removed) {
-        sl<SettingsCubit>().setAdsRemoved(true);
-      }
-    },
-  );
+  // Non-blocking: Play Services / billing can stall on some devices → ANR.
+  try {
+    await iap.init(
+      onAdsOwnershipChanged: (removed) {
+        if (removed) {
+          sl<SettingsCubit>().setAdsRemoved(true);
+        }
+      },
+    ).timeout(const Duration(seconds: 4));
+  } catch (_) {
+    // IAP unavailable — user just won't see purchase options.
+  }
   sl.registerSingleton<IapService>(iap);
 
   sl.registerLazySingleton<ShareService>(() => SharePlusService());

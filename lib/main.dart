@@ -24,13 +24,22 @@ Future<void> main() async {
 
   // Prefer device cache / system fallback — never block UI on font HTTP.
   GoogleFonts.config.allowRuntimeFetching = false;
+
+  // Catch ALL uncaught Flutter framework errors → log, don't crash.
+  FlutterError.onError = (details) {
+    debugPrint('FlutterError: ${details.exceptionAsString()}');
+    debugPrint(details.stack.toString());
+  };
+
   PlatformDispatcher.instance.onError = (error, stack) {
     final msg = error.toString();
     if (msg.contains('google_fonts') || msg.contains('Failed to load font')) {
       debugPrint('Suppressed font error: $error');
       return true;
     }
-    return false;
+    debugPrint('Uncaught error: $error');
+    debugPrint(stack.toString());
+    return true; // Handled — don't crash the app.
   };
 
   await SystemChrome.setPreferredOrientations([

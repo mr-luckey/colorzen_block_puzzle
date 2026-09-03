@@ -1,7 +1,7 @@
 name: colorzen_block_puzzle
 description: ColorZen Block Puzzle — place, clear, zen.
 publish_to: 'none'
-version: 3.0.0+3
+version: 5.0.0+5
 
 environment:
   sdk: ^3.11.5

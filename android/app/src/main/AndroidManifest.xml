@@ -29,12 +29,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Impeller OFF: crashes on Mali / Adreno 5xx / PowerVR GPUs.
+             Re-enable only after Flutter Impeller is stable on all Android GPUs. -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
-            android:value="true" />
+            android:value="false" />
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-5561438827097019~3867868442"/>
+            android:value="ca-app-pub-6619866004331477~5305314441"/>
     </application>
     <queries>
         <intent>
